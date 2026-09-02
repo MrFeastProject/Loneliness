@@ -1,0 +1,759 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#0a0a0a">
+<title>Loneliness — Психологический тест</title>
+<script src="https://unpkg.com/lucide@latest"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  :root { --bg:#0a0a0a; --fg:#f5f5f5; --muted:#888; --glass:rgba(20,20,20,0.55); --glass-border:rgba(255,255,255,0.08); }
+  html, body { height: 100%; }
+  body { overflow: hidden; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Inter", sans-serif; background: var(--bg); color: var(--fg); -webkit-font-smoothing: antialiased; -webkit-tap-highlight-color: transparent; }
+
+  canvas#rainBack { position: fixed; inset: 0; z-index: 1; pointer-events: none; }
+  canvas#rainFront { position: fixed; inset: 0; z-index: 6; pointer-events: none; }
+  .fog { position: fixed; inset: 0; background: radial-gradient(circle at 50% 50%, transparent 40%, rgba(0,0,0,0.45) 100%); z-index: 2; pointer-events: none; }
+
+  .app { position: relative; z-index: 3; height: 100dvh; overflow-y: auto; overflow-x: hidden; display: flex; padding: clamp(12px,3vw,28px); padding-bottom: max(env(safe-area-inset-bottom),16px); -webkit-overflow-scrolling: touch; }
+  .screen { display: none; margin: auto; width: 100%; max-width: 640px; animation: fadeIn 0.7s ease; }
+  .screen.active { display: flex; flex-direction: column; align-items: center; justify-content: center; }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+
+  .loading-screen { text-align: center; padding: 40px 20px; }
+  .logo-icon { width: 80px; height: 80px; margin: 0 auto 26px; color: #ddd; animation: pulse 2s ease-in-out infinite; filter: drop-shadow(0 0 18px rgba(255,255,255,0.15)); }
+  @keyframes pulse { 0%,100% { opacity: 0.6; transform: scale(1); } 50% { opacity: 1; transform: scale(1.06); } }
+  .loading-text { font-size: clamp(1rem,3vw,1.3rem); color: #ccc; margin-bottom: 22px; font-weight: 300; letter-spacing: 0.05em; }
+  .loading-dots::after { content: '...'; animation: dots 1.5s steps(4, end) infinite; }
+  @keyframes dots { 0%,20% { content:''; } 40% { content:'.'; } 60% { content:'..'; } 80%,100% { content:'...'; } }
+  .progress-circle { width: 52px; height: 52px; margin: 0 auto 24px; color: #aaa; animation: spin 1.6s linear infinite; }
+  @keyframes spin { 100% { transform: rotate(360deg); } }
+  .load-progress { width: min(320px, 80vw); margin: 0 auto; }
+  .load-bar { height: 3px; background: rgba(255,255,255,0.08); border-radius: 3px; overflow: hidden; }
+  #loadFill { height: 100%; width: 0%; background: linear-gradient(90deg,#fff,#777); box-shadow: 0 0 12px rgba(255,255,255,0.5); transition: width 0.3s ease; }
+  .load-status { margin-top: 10px; font-size: 0.75rem; color: #777; letter-spacing: 0.12em; text-transform: uppercase; }
+
+  .generating-text { font-size: clamp(1.05rem,3.2vw,1.35rem); color: #ddd; text-align: center; margin-top: 22px; font-weight: 300; line-height: 1.6; }
+
+  .card { background: var(--glass); backdrop-filter: blur(20px) saturate(120%); -webkit-backdrop-filter: blur(20px) saturate(120%); border: 1px solid var(--glass-border); border-radius: clamp(14px,3vw,20px); padding: clamp(22px,5vw,40px) clamp(18px,4.5vw,36px); box-shadow: 0 30px 80px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.05); width: 100%; }
+  h1 { font-size: clamp(1.9rem,7vw,3rem); font-weight: 200; letter-spacing: 0.3em; text-align: center; margin-bottom: 10px; background: linear-gradient(180deg,#fff 0%,#999 100%); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .subtitle { text-align: center; color: var(--muted); font-size: clamp(0.7rem,2.4vw,0.95rem); letter-spacing: 0.1em; margin-bottom: 26px; font-weight: 300; }
+  .quote { text-align: center; font-style: italic; color: #b0b0b0; padding: 18px 8px; border-top: 1px solid rgba(255,255,255,0.06); border-bottom: 1px solid rgba(255,255,255,0.06); margin-bottom: 26px; line-height: 1.6; font-size: clamp(0.85rem,2.6vw,1rem); }
+
+  .btn, .option { position: relative; overflow: hidden; }
+  .btn { display: inline-flex; align-items: center; justify-content: center; gap: 10px; width: 100%; padding: 16px 24px; background: linear-gradient(180deg, rgba(255,255,255,0.1), rgba(255,255,255,0.02)); color: var(--fg); border: 1px solid rgba(255,255,255,0.15); border-radius: 14px; font-size: 1rem; letter-spacing: 0.05em; cursor: pointer; transition: all 0.25s ease; font-family: inherit; user-select: none; touch-action: manipulation; }
+  .btn:hover { background: linear-gradient(180deg, rgba(255,255,255,0.18), rgba(255,255,255,0.05)); border-color: rgba(255,255,255,0.35); transform: translateY(-1px); box-shadow: 0 6px 24px rgba(0,0,0,0.5), 0 0 18px rgba(255,255,255,0.06); }
+  .btn:active { transform: translateY(0) scale(0.99); }
+  .btn + .btn { margin-top: 12px; }
+  .btn::after, .option::after { content: ""; position: absolute; top: 0; left: -70%; width: 45%; height: 100%; background: linear-gradient(100deg, transparent, rgba(255,255,255,0.14), transparent); transform: skewX(-20deg); transition: left 0.7s ease; pointer-events: none; }
+  .btn:hover::after, .option:hover::after { left: 125%; }
+
+  .ripple { position: absolute; border-radius: 50%; background: radial-gradient(circle, rgba(255,255,255,0.35) 0%, rgba(255,255,255,0.12) 45%, transparent 70%); transform: scale(0); animation: ripple 0.7s ease-out forwards; pointer-events: none; }
+  @keyframes ripple { to { transform: scale(2.6); opacity: 0; } }
+
+  .gender-buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .progress-bar { height: 3px; background: rgba(255,255,255,0.08); border-radius: 3px; overflow: hidden; }
+  .progress-fill { height: 100%; width: 0%; background: linear-gradient(90deg,#fff,#888); transition: width 0.5s ease; box-shadow: 0 0 12px rgba(255,255,255,0.4); }
+  .progress-text { font-size: 0.72rem; color: var(--muted); margin-top: 8px; letter-spacing: 0.15em; text-transform: uppercase; }
+  .question { font-size: clamp(1.05rem,3vw,1.25rem); font-weight: 300; line-height: 1.55; margin: 22px 0 24px; text-align: center; min-height: 3.2em; display: flex; align-items: center; justify-content: center; }
+  .question.swap { animation: qIn 0.4s ease; }
+  @keyframes qIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+  .options { display: grid; gap: 10px; }
+  .option { padding: 15px 18px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; color: #ddd; cursor: pointer; transition: all 0.2s ease; font-size: 1rem; text-align: left; font-family: inherit; user-select: none; touch-action: manipulation; }
+  .option:hover { background: rgba(255,255,255,0.1); border-color: rgba(255,255,255,0.3); transform: translateX(4px); box-shadow: 0 4px 18px rgba(0,0,0,0.4); }
+  .option:active { transform: scale(0.98); background: rgba(255,255,255,0.16); }
+
+  .result-circle { width: clamp(150px,48vw,200px); height: clamp(150px,48vw,200px); margin: 18px auto; position: relative; display: flex; align-items: center; justify-content: center; }
+  .result-circle svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+  .result-circle .track { stroke: rgba(255,255,255,0.08); }
+  .result-circle .fill { stroke: url(#grad); stroke-linecap: round; transition: stroke-dashoffset 2s ease; }
+  .result-percent { position: absolute; font-size: clamp(2.1rem,8vw,2.8rem); font-weight: 200; }
+  .result-percent span { font-size: 1rem; color: var(--muted); }
+  .result-title { text-align: center; font-size: clamp(1.1rem,3.6vw,1.4rem); font-weight: 300; letter-spacing: 0.1em; margin-top: 8px; text-transform: uppercase; }
+  .result-desc { text-align: left; color: #bbb; margin-top: 14px; line-height: 1.7; font-weight: 300; font-size: clamp(0.9rem,2.7vw,1rem); white-space: pre-line; }
+  .advice { margin-top: 22px; padding: 18px; background: rgba(255,255,255,0.04); border-left: 2px solid rgba(255,255,255,0.3); border-radius: 8px; line-height: 1.7; color: #ccc; font-size: clamp(0.88rem,2.6vw,0.95rem); white-space: pre-line; }
+  .advice-title { display: flex; align-items: center; gap: 8px; color: var(--fg); font-weight: 500; margin-bottom: 10px; }
+  .footer-note { text-align: center; font-size: 0.75rem; color: #666; margin-top: 18px; letter-spacing: 0.05em; }
+  @media (max-width: 400px) { .gender-buttons { grid-template-columns: 1fr; } h1 { letter-spacing: 0.2em; } }
+</style>
+</head>
+<body>
+
+<canvas id="rainBack"></canvas>
+<div class="fog"></div>
+
+<div class="app">
+
+  <div class="screen active" id="screen-loading">
+    <div class="loading-screen">
+      <svg class="logo-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/>
+        <path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/>
+      </svg>
+      <div class="loading-text">Загружаем локальный AI<span class="loading-dots"></span><br><span style="font-size:0.8em;color:#777;">подождите</span></div>
+      <svg class="progress-circle" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
+      <div class="load-progress">
+        <div class="load-bar"><div id="loadFill"></div></div>
+        <div class="load-status" id="loadStatus">Проверка хранилища...</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="screen" id="screen-welcome">
+    <div class="card">
+      <h1>LONELINESS</h1>
+      <div class="subtitle">ПСИХОЛОГИЧЕСКИЙ ТЕСТ</div>
+      <div class="quote">«Одиночество — это не отсутствие людей рядом,<br>а отсутствие того, кто понимает»</div>
+      <p style="color:#aaa; line-height:1.7; text-align:center; margin-bottom:24px; font-weight:300;">
+        Этот тест покажет, насколько вы чувствуете себя одиноким. Отвечайте честно — правильных ответов не существует.
+      </p>
+      <button class="btn" onclick="goTo('screen-gender')"><i data-lucide="cloud-rain"></i> Начать</button>
+      <div class="footer-note">25 вопросов · ~5 минут</div>
+    </div>
+  </div>
+
+  <div class="screen" id="screen-gender">
+    <div class="card">
+      <h1 style="font-size:clamp(1.4rem,5vw,2rem);">Кто вы?</h1>
+      <div class="subtitle">ВЫБЕРИТЕ СВОЙ ПОЛ</div>
+      <p style="color:#999; text-align:center; margin-bottom:24px; font-weight:300;">Это поможет подобрать более точные рекомендации</p>
+      <div class="gender-buttons">
+        <button class="btn" onclick="selectGender('male')"><i data-lucide="user"></i> Мужчина</button>
+        <button class="btn" onclick="selectGender('female')"><i data-lucide="user"></i> Женщина</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="screen" id="screen-quiz">
+    <div class="card">
+      <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
+      <div class="progress-text" id="progressText">Вопрос 1 из 25</div>
+      <div class="subtitle" style="margin:16px 0 0;">Ответьте честно на каждый вопрос</div>
+      <div class="question" id="questionText"></div>
+      <div class="options" id="optionsList"></div>
+    </div>
+  </div>
+
+  <div class="screen" id="screen-generating">
+    <div class="loading-screen">
+      <svg class="logo-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/>
+        <path d="M20 3v4"/><path d="M22 5h-4"/><path d="M4 17v2"/><path d="M5 18H3"/>
+      </svg>
+      <div class="generating-text">Генерируем ответ на основе ваших ответов<span class="loading-dots"></span></div>
+    </div>
+  </div>
+
+  <div class="screen" id="screen-result">
+    <div class="card">
+      <div class="subtitle" style="margin-bottom:0;">ВАШ РЕЗУЛЬТАТ</div>
+      <div class="result-circle">
+        <svg viewBox="0 0 200 200">
+          <defs><linearGradient id="grad" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#ffffff"/><stop offset="100%" stop-color="#555555"/></linearGradient></defs>
+          <circle class="track" cx="100" cy="100" r="85" fill="none" stroke-width="6"/>
+          <circle class="fill" id="resultCircle" cx="100" cy="100" r="85" fill="none" stroke-width="6" stroke-dasharray="534" stroke-dashoffset="534"/>
+        </svg>
+        <div class="result-percent" id="resultPercent">0<span>%</span></div>
+      </div>
+      <div class="result-title" id="resultTitle">—</div>
+      <div class="result-desc" id="resultDesc">—</div>
+      <div class="advice"><div class="advice-title"><i data-lucide="heart-handshake"></i> Персональные рекомендации</div><div id="adviceText"></div></div>
+      <div class="advice"><div class="advice-title"><i data-lucide="leaf"></i> Универсальный совет</div><div id="universalText"></div></div>
+      <button class="btn" style="margin-top:24px;" onclick="restart()"><i data-lucide="rotate-ccw"></i> Пройти ещё раз</button>
+    </div>
+  </div>
+
+</div>
+
+<canvas id="rainFront"></canvas>
+<audio id="bgMusic" loop preload="auto"></audio>
+
+<script>
+const rand = (a, b) => Math.random() * (b - a) + a;
+const pick = arr => arr[Math.floor(Math.random() * arr.length)];
+
+/* ================= МУЗЫКА + INDEXEDDB ================= */
+const MUSIC_URL = 'https://raw.githubusercontent.com/MrFeastProject/Loneliness/main/Gentle%20Rain%20Relaxation.m4a';
+const music = document.getElementById('bgMusic');
+let musicOn = false;
+let bootFinished = false;
+
+function tryPlay() {
+  if (musicOn || !music.src) return;
+  music.volume = 0.4;
+  const p = music.play();
+  if (p) p.then(() => { musicOn = true; }).catch(() => {});
+}
+function stopMusic() { music.pause(); musicOn = false; }
+['pointerdown','keydown','touchend'].forEach(ev => window.addEventListener(ev, tryPlay));
+
+function openDB() {
+  return new Promise((res, rej) => {
+    try {
+      const req = indexedDB.open('loneliness-db', 1);
+      req.onupgradeneeded = () => req.result.createObjectStore('assets');
+      req.onsuccess = () => res(req.result);
+      req.onerror = () => rej(req.error);
+      req.onblocked = () => rej(new Error('blocked'));
+    } catch (e) { rej(e); }
+  });
+}
+function dbGet(db, key) { return new Promise((res, rej) => { try { const q = db.transaction('assets','readonly').objectStore('assets').get(key); q.onsuccess = () => res(q.result); q.onerror = () => rej(q.error); } catch(e){ rej(e); } }); }
+function dbSet(db, key, val) { return new Promise((res, rej) => { try { const q = db.transaction('assets','readwrite').objectStore('assets').put(val, key); q.onsuccess = () => res(); q.onerror = () => rej(q.error); } catch(e){ rej(e); } }); }
+
+function finishBoot() {
+  if (bootFinished) return;
+  bootFinished = true;
+  goTo('screen-welcome');
+  tryPlay();
+}
+
+async function boot() {
+  const status = document.getElementById('loadStatus');
+  const fill = document.getElementById('loadFill');
+  let cached = false;
+  const hardTimeout = setTimeout(finishBoot, 6000);
+  try {
+    status.textContent = 'Проверка IndexedDB...';
+    let db = null;
+    try { db = await openDB(); } catch (e) { db = null; }
+    if (db) {
+      let blob = null;
+      try { blob = await dbGet(db, 'music'); } catch (e) { blob = null; }
+      if (blob && blob.size > 1000) {
+        music.src = URL.createObjectURL(blob);
+        cached = true;
+        fill.style.width = '100%';
+        status.textContent = 'Найдено в памяти · готово';
+      } else {
+        status.textContent = 'Скачивание: 0%';
+        try {
+          const controller = new AbortController();
+          const fetchTimeout = setTimeout(() => controller.abort(), 8000);
+          const resp = await fetch(MUSIC_URL, { signal: controller.signal });
+          clearTimeout(fetchTimeout);
+          if (!resp.ok) throw new Error('bad status');
+          const total = +resp.headers.get('Content-Length') || 0;
+          const reader = resp.body.getReader();
+          const chunks = []; let got = 0;
+          for (;;) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            chunks.push(value); got += value.length;
+            if (total) { const pct = Math.round(got / total * 100); fill.style.width = pct + '%'; status.textContent = 'Скачиваем локальный AI: ' + pct + '%'; }
+          }
+          const full = new Blob(chunks, { type: 'audio/mp4' });
+          music.src = URL.createObjectURL(full);
+          try { await dbSet(db, 'music', full); } catch (e) {}
+          fill.style.width = '100%';
+          status.textContent = 'Сохранено в память · готово';
+        } catch (e) {
+          music.src = MUSIC_URL;
+          status.textContent = 'Онлайн-режим';
+          fill.style.width = '100%';
+        }
+      }
+    } else {
+      music.src = MUSIC_URL;
+      status.textContent = 'Онлайн-режим';
+      fill.style.width = '100%';
+    }
+  } catch (e) {
+    music.src = MUSIC_URL;
+    status.textContent = 'Онлайн-режим';
+    fill.style.width = '100%';
+  }
+  clearTimeout(hardTimeout);
+  setTimeout(finishBoot, cached ? 400 : 800);
+}
+
+/* ================= ДОЖДЬ: СЦЕНА, КАПЛИ, ЛУЖИ ================= */
+const backCv = document.getElementById('rainBack');
+const frontCv = document.getElementById('rainFront');
+const trailCv = document.createElement('canvas');
+const sceneCv = document.createElement('canvas');
+const bctx = backCv.getContext('2d');
+const fctx = frontCv.getContext('2d');
+const tctx = trailCv.getContext('2d');
+let W = 0, H = 0, dpr = 1, intensity = 1, flash = 0, frame = 0;
+
+let lights = [];
+function buildScene() {
+  sceneCv.width = Math.max(1, W * dpr); sceneCv.height = Math.max(1, H * dpr);
+  const g = sceneCv.getContext('2d');
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const sky = g.createLinearGradient(0, 0, 0, H);
+  sky.addColorStop(0, '#181818'); sky.addColorStop(0.55, '#0d0d0d'); sky.addColorStop(1, '#050505');
+  g.fillStyle = sky; g.fillRect(0, 0, W, H);
+  g.save();
+  try { g.filter = 'blur(7px)'; } catch (e) {}
+  let x = -20;
+  while (x < W + 20) {
+    const bw = rand(50, 130), bh = rand(H * 0.2, H * 0.5);
+    g.fillStyle = `rgba(8,8,8,${rand(0.7, 1)})`;
+    g.fillRect(x, H * 0.78 - bh, bw, bh);
+    x += bw * rand(0.7, 1.1);
+  }
+  const street = g.createRadialGradient(W / 2, H * 0.85, 0, W / 2, H * 0.85, W * 0.7);
+  street.addColorStop(0, 'rgba(120,120,120,0.20)'); street.addColorStop(1, 'rgba(0,0,0,0)');
+  g.fillStyle = street; g.fillRect(0, 0, W, H);
+  g.restore();
+  lights = [];
+  const n = Math.round(Math.min(30, Math.max(14, W / 45)));
+  for (let i = 0; i < n; i++) lights.push({ x: Math.random() * W, y: H * rand(0.45, 0.95), r: rand(2, 13), a: rand(0.04, 0.16), ph: Math.random() * 6.28, sp: rand(0.005, 0.02) });
+}
+
+const SPR = 96;
+function makeSprite(seed) {
+  const c = document.createElement('canvas'); c.width = c.height = SPR;
+  const g = c.getContext('2d'), R = SPR / 2, N = 12, jit = [];
+  for (let i = 0; i < N; i++) jit.push(1 + Math.sin(seed * 9 + i * 2.7) * 0.045);
+  const outline = () => { g.beginPath(); for (let i = 0; i <= N; i++) { const a = i / N * Math.PI * 2, rr = R * 0.94 * jit[i % N]; const px = R + Math.cos(a) * rr, py = R + Math.sin(a) * rr; i ? g.lineTo(px, py) : g.moveTo(px, py); } g.closePath(); };
+  let body = g.createRadialGradient(R, R * 0.9, R * 0.15, R, R, R);
+  body.addColorStop(0, 'rgba(255,255,255,0.10)'); body.addColorStop(0.45, 'rgba(190,190,190,0.12)');
+  body.addColorStop(0.75, 'rgba(90,90,90,0.16)'); body.addColorStop(0.92, 'rgba(20,20,20,0.34)'); body.addColorStop(1, 'rgba(0,0,0,0.45)');
+  g.fillStyle = body; outline(); g.fill();
+  g.save(); outline(); g.clip();
+  let caus = g.createRadialGradient(R, R * 1.5, 0, R, R * 1.5, R * 0.95);
+  caus.addColorStop(0, 'rgba(255,255,255,0.9)'); caus.addColorStop(0.25, 'rgba(255,255,255,0.35)'); caus.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = caus; g.beginPath(); g.arc(R, R, R, 0, Math.PI * 2); g.fill();
+  let top = g.createRadialGradient(R, -R * 0.35, 0, R, -R * 0.35, R * 1.15);
+  top.addColorStop(0, 'rgba(0,0,0,0.55)'); top.addColorStop(0.5, 'rgba(0,0,0,0.2)'); top.addColorStop(1, 'rgba(0,0,0,0)');
+  g.fillStyle = top; g.beginPath(); g.arc(R, R, R, 0, Math.PI * 2); g.fill();
+  g.restore();
+  const hx = R * (0.58 + seed * 0.2), hy = R * (0.52 + (1 - seed) * 0.2);
+  let spec = g.createRadialGradient(hx, hy, 0, hx, hy, R * 0.36);
+  spec.addColorStop(0, 'rgba(255,255,255,0.95)'); spec.addColorStop(0.4, 'rgba(255,255,255,0.35)'); spec.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = spec; g.beginPath(); g.arc(hx, hy, R * 0.36, 0, Math.PI * 2); g.fill();
+  return c;
+}
+const sprites = [makeSprite(0.2), makeSprite(0.55), makeSprite(0.85)];
+
+let drops = [], streaks = [], rings = [], capDrops = 200;
+class Drop {
+  constructor(init) { this.reset(init); }
+  reset(init) {
+    this.x = Math.random() * W; this.y = Math.random() * H;
+    const roll = Math.random();
+    this.r = roll < 0.6 ? rand(0.8, 2.2) : roll < 0.92 ? rand(2.3, 5) : rand(5, 7.5);
+    this.targetR = this.r * rand(1.05, 1.7);
+    this.opacity = 0; this.age = 0;
+    this.wait = rand(120, 700) / intensity;
+    this.evap = rand(1600, 4200);
+    this.falling = false; this.vy = 0; this.stick = 0;
+    this.wob = Math.random() * 6.28; this.wobSpeed = rand(0.02, 0.07);
+    this.sprite = (Math.random() * 3) | 0;
+    this.impact = Math.random() < 0.25;
+    this.trail = [];
+  }
+  update(all) {
+    this.age++;
+    if (this.opacity < 1) this.opacity = Math.min(1, this.opacity + 0.03);
+    if (!this.falling) {
+      if (this.r < this.targetR) this.r += 0.012 + this.r * 0.002;
+      if (this.age > this.wait && this.r > 2.6) { this.falling = true; this.vy = rand(0.2, 0.9); }
+      if (this.age > this.evap) { this.opacity -= 0.012; if (this.opacity <= 0) this.reset(false); }
+    } else {
+      if (this.stick > 0) { this.stick--; this.vy *= 0.45; }
+      else {
+        this.vy += 0.035 + this.r * 0.007;
+        if (this.vy > 0.7 && Math.random() < 0.008) this.stick = rand(15, 70) | 0;
+      }
+      const vmax = 4 + this.r * 1.2;
+      if (this.vy > vmax) this.vy = vmax;
+      this.y += this.vy; this.wob += this.wobSpeed;
+      this.x += Math.sin(this.wob) * 0.35;
+      /* === ИСПРАВЛЕНО: след рисуется реже и слабее, чтобы не засорять экран === */
+      if (this.vy > 0.8 && this.age % 5 === 0) {
+        tctx.globalAlpha = 0.025;
+        tctx.fillStyle = '#c8c8c8';
+        tctx.beginPath(); tctx.arc(this.x, this.y - this.r, Math.max(0.5, this.r * 0.3), 0, 6.29); tctx.fill();
+        tctx.globalAlpha = 1;
+      }
+      for (const o of all) {
+        if (o === this || o.falling) continue;
+        const dx = o.x - this.x, dy = o.y - this.y;
+        if (dx * dx + dy * dy < (this.r + o.r) * (this.r + o.r)) {
+          this.r = Math.min(9, Math.sqrt(this.r * this.r + o.r * o.r));
+          o.reset(false);
+        }
+      }
+      if (this.r > 1.4) this.r -= 0.004;
+      if (this.y - this.r > H) this.reset(false);
+    }
+  }
+  draw(g) {
+    if (this.r > 3 && this.opacity > 0.4) {
+      g.save();
+      g.beginPath(); g.arc(this.x, this.y, this.r * 0.92, 0, 6.29); g.clip();
+      g.translate(this.x, this.y); g.scale(-1, -1);
+      g.globalAlpha = 0.35 * this.opacity;
+      const s = this.r * 3 * dpr;
+      const sx = Math.max(0, (this.x - this.r * 1.5) * dpr), sy = Math.max(0, (this.y - this.r * 1.5) * dpr);
+      g.drawImage(sceneCv, sx, sy, s, s, -this.r * 0.8, -this.r * 0.8, this.r * 1.6, this.r * 1.6);
+      g.restore();
+      g.globalAlpha = 1;
+    }
+    const stretch = 1 + Math.min(0.55, this.vy * 0.06);
+    const w = this.r * 2, h = w * stretch;
+    g.globalAlpha = this.opacity;
+    g.drawImage(sprites[this.sprite], this.x - this.r, this.y - h / 2, w, h);
+    if (this.impact && this.age < 22) {
+      g.globalAlpha = (1 - this.age / 22) * 0.22;
+      g.strokeStyle = '#fff'; g.lineWidth = 0.7;
+      g.beginPath(); g.arc(this.x, this.y, this.r + this.age * 0.7, 0, 6.29); g.stroke();
+    }
+    g.globalAlpha = 1;
+  }
+}
+
+class Streak {
+  constructor(init) { this.reset(init); }
+  reset(init) {
+    this.x = Math.random() * (W + 100); this.y = init ? Math.random() * H : -80;
+    this.len = rand(40, 130); this.speed = rand(9, 18); this.opacity = rand(0.04, 0.16);
+  }
+  update(wind) { this.y += this.speed; this.x -= wind; if (this.y - this.len > H) this.reset(false); }
+  draw(g, wind) {
+    g.strokeStyle = `rgba(180,180,180,${this.opacity})`; g.lineWidth = 0.8;
+    g.beginPath(); g.moveTo(this.x, this.y); g.lineTo(this.x + this.len * 0.05 * wind, this.y - this.len); g.stroke();
+  }
+}
+
+let hotspots = [];
+const waterMap = new WeakMap();
+function refreshHotspots() {
+  hotspots = Array.from(document.querySelectorAll('.btn, .option'))
+    .map(el => { const r = el.getBoundingClientRect(); return { el, x: r.left, y: r.top, w: r.width, h: r.height, water: waterMap.get(el) || rand(0, 0.2), seed: Math.random() }; })
+    .filter(h => h.w > 0);
+}
+function addDrop(props) {
+  let d;
+  if (drops.length < capDrops) { d = new Drop(false); drops.push(d); }
+  else { let idx = 0, best = 1e9; for (let i = 0; i < drops.length; i++) if (!drops[i].falling && drops[i].r < best) { best = drops[i].r; idx = i; } d = drops[idx]; d.reset(false); }
+  Object.assign(d, props);
+  return d;
+}
+function splashAt(x, y) {
+  rings.push({ x, y, age: 0 });
+  for (let i = 0; i < 3; i++) addDrop({ x: x + rand(-14, 14), y: y + rand(-10, 10), r: rand(0.8, 1.8), opacity: 0.9, impact: true, age: 0 });
+  for (const h of hotspots) if (x > h.x && x < h.x + h.w && y > h.y && y < h.y + h.h) h.water = Math.min(1, h.water + 0.3);
+}
+
+function resize() {
+  dpr = Math.min(window.devicePixelRatio || 1, 2);
+  W = window.innerWidth; H = window.innerHeight;
+  for (const [cv, ctx] of [[backCv, bctx], [frontCv, fctx], [trailCv, tctx]]) {
+    cv.width = W * dpr; cv.height = H * dpr;
+    if (cv !== trailCv) { cv.style.width = W + 'px'; cv.style.height = H + 'px'; }
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  buildScene();
+  /* === ИСПРАВЛЕНО: умеренное количество капель как в первой версии (80) === */
+  const td = 80;
+  capDrops = td + 40;
+  while (drops.length < td) drops.push(new Drop(true));
+  drops.length = Math.min(drops.length, capDrops);
+  /* === ИСПРАВЛЕНО: меньше фоновых полос (25) === */
+  const ts = 25;
+  while (streaks.length < ts) streaks.push(new Streak(true));
+  streaks.length = ts;
+  refreshHotspots();
+}
+resize();
+window.addEventListener('resize', resize);
+document.querySelector('.app').addEventListener('scroll', () => requestAnimationFrame(refreshHotspots));
+
+function animate() {
+  frame++;
+  const wind = 0.7 + Math.sin(frame * 0.003) * 0.5;
+  if (Math.random() < 0.0012) flash = 1;
+  flash *= 0.93;
+
+  bctx.clearRect(0, 0, W, H);
+  bctx.drawImage(sceneCv, 0, 0, W, H);
+  for (const l of lights) {
+    const a = l.a * (0.7 + 0.3 * Math.sin(frame * l.sp + l.ph)) + flash * 0.08;
+    const g = bctx.createRadialGradient(l.x, l.y, 0, l.x, l.y, l.r);
+    g.addColorStop(0, `rgba(230,230,230,${a})`); g.addColorStop(1, 'rgba(230,230,230,0)');
+    bctx.fillStyle = g; bctx.beginPath(); bctx.arc(l.x, l.y, l.r, 0, 6.29); bctx.fill();
+  }
+  for (const s of streaks) { s.update(wind); s.draw(bctx, wind); }
+  if (flash > 0.02) { bctx.fillStyle = `rgba(255,255,255,${flash * 0.09})`; bctx.fillRect(0, 0, W, H); }
+
+  /* === ИСПРАВЛЕНО: следы испаряются в 8 раз быстрее (0.12 вместо 0.015) — фон остаётся чистым === */
+  tctx.globalCompositeOperation = 'destination-out';
+  tctx.fillStyle = 'rgba(0,0,0,0.12)';
+  tctx.fillRect(0, 0, W, H);
+  tctx.globalCompositeOperation = 'source-over';
+
+  fctx.clearRect(0, 0, W, H);
+  fctx.drawImage(trailCv, 0, 0, W, H);
+
+  for (const h of hotspots) {
+    h.water += 0.0009 * intensity;
+    if (h.water >= 1) {
+      addDrop({ x: h.x + h.w * rand(0.15, 0.85), y: h.y + h.h - 3, r: rand(4.5, 7), targetR: 8, falling: true, vy: 0.6, opacity: 1, age: 0 });
+      h.water = 0.1;
+    }
+    waterMap.set(h.el, h.water);
+    if (h.water > 0.15) {
+      const a = Math.min(1, h.water);
+      fctx.globalAlpha = 0.10 * a;
+      fctx.fillStyle = '#fff';
+      fctx.beginPath();
+      fctx.ellipse(h.x + h.w / 2, h.y + h.h - 1, h.w * (0.12 + 0.36 * a), 1.5 + 2.5 * a, 0, 0, 6.29);
+      fctx.fill();
+      for (let i = 0; i < 3; i++) {
+        const bx = h.x + h.w * (0.18 + 0.32 * i + h.seed * 0.1);
+        fctx.globalAlpha = 0.5 * a;
+        fctx.drawImage(sprites[i], bx - (1 + 2 * a), h.y + h.h - 3 - (1 + 2 * a), (1 + 2 * a) * 2, (1 + 2 * a) * 2);
+      }
+      fctx.globalAlpha = 1;
+    }
+  }
+
+  for (const d of drops) { d.update(drops); d.draw(fctx); }
+
+  for (let i = rings.length - 1; i >= 0; i--) {
+    const r = rings[i]; r.age++;
+    fctx.globalAlpha = (1 - r.age / 25) * 0.25;
+    fctx.strokeStyle = '#fff'; fctx.lineWidth = 0.8;
+    fctx.beginPath(); fctx.arc(r.x, r.y, r.age * 1.4, 0, 6.29); fctx.stroke();
+    fctx.globalAlpha = 1;
+    if (r.age > 25) rings.splice(i, 1);
+  }
+
+  requestAnimationFrame(animate);
+}
+animate();
+
+/* ================= ТЕСТ ================= */
+const questions = [
+  { q: "Есть ли у вас близкий человек, которому вы можете рассказать о своих переживаниях?" },
+  { q: "Чувствуете ли вы, что вам не с кем поговорить?" },
+  { q: "Есть ли рядом люди, с которыми вам тепло и спокойно?" },
+  { q: "Чувствуете ли вы, что никто вас по-настоящему не понимает?" },
+  { q: "Бывает ли у вас чувство, что вы никому не нужны?" },
+  { q: "Есть ли человек, к которому можно обратиться за помощью, когда тяжело?" },
+  { q: "Часто ли общение с людьми не приносит вам радости?" },
+  { q: "Хватает ли вам близкого человека рядом?" },
+  { q: "Есть ли люди, которым интересны те же вещи, что и вам?" },
+  { q: "Чувствуете ли вы себя далеко от других людей?" },
+  { q: "Бывает ли вам одиноко даже среди людей?" },
+  { q: "Легко ли вам знакомиться и общаться с новыми людьми?" },
+  { q: "Чувствуете ли вы, что в ваших отношениях с людьми нет настоящей близости?" },
+  { q: "Чувствуете ли вы, что люди вас ценят и уважают?" },
+  { q: "Хватает ли вам простого тёплого общения?" },
+  { q: "Бывает ли, что вы остаётесь один, хотя хотите быть с людьми?" },
+  { q: "Есть ли человек, с которым можно поделиться всем, что на душе?" },
+  { q: "Чувствуете ли вы себя чужим среди людей?" },
+  { q: "Кажется ли вам, что до вас никому нет дела?" },
+  { q: "Есть ли человек, с которым вы чувствуете себя по-настоящему близко?" },
+  { q: "Чувствуете ли вы одиночество внутри себя?" },
+  { q: "Чувствуете ли вы себя лишним в компании?" },
+  { q: "Чувствуете ли вы себя частью семьи, компании друзей или коллектива?" },
+  { q: "Избегаете ли вы общения из страха, что вас не поймут?" },
+  { q: "Тяжело ли вам оставаться наедине с собой?" }
+];
+const reverseMap = [true,false,true,false,false,true,false,true,true,false,false,true,false,true,true,false,true,false,false,true,false,false,true,false,false];
+const options = [
+  { text: "Да", score: 5 }, { text: "Скорее да", score: 4 }, { text: "Иногда", score: 3 },
+  { text: "Скорее нет", score: 2 }, { text: "Нет", score: 1 }
+];
+
+let currentGender = null, currentQuestion = 0, totalScore = 0, userAnswers = [];
+
+function goTo(id) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  document.querySelector('.app').scrollTop = 0;
+  intensity = (id === 'screen-quiz') ? 1.7 : 1;
+  requestAnimationFrame(refreshHotspots);
+  if (typeof lucide !== 'undefined') lucide.createIcons();
+}
+function selectGender(g) { currentGender = g; currentQuestion = 0; totalScore = 0; userAnswers = []; goTo('screen-quiz'); renderQuestion(); }
+function renderQuestion() {
+  const q = questions[currentQuestion], total = questions.length;
+  document.getElementById('progressText').textContent = `Вопрос ${currentQuestion + 1} из ${total}`;
+  document.getElementById('progressFill').style.width = (currentQuestion / total * 100) + '%';
+  const qt = document.getElementById('questionText');
+  qt.textContent = q.q;
+  qt.classList.remove('swap'); void qt.offsetWidth; qt.classList.add('swap');
+  const list = document.getElementById('optionsList');
+  list.innerHTML = '';
+  options.forEach(opt => {
+    const btn = document.createElement('button');
+    btn.className = 'option'; btn.textContent = opt.text;
+    btn.onclick = () => answer(opt.score);
+    list.appendChild(btn);
+  });
+  requestAnimationFrame(refreshHotspots);
+}
+function answer(score) {
+  const finalScore = reverseMap[currentQuestion] ? (6 - score) : score;
+  totalScore += finalScore; userAnswers.push(finalScore);
+  currentQuestion++;
+  currentQuestion >= questions.length ? generateResult() : renderQuestion();
+}
+function generateResult() { stopMusic(); goTo('screen-generating'); setTimeout(showResult, 3500); }
+
+/* ============ УНИКАЛЬНАЯ ГЕНЕРАЦИЯ ============ */
+function buildProfile(a) {
+  const axis = idx => { let s = 0, n = 0; for (const i of idx) if (a[i] !== undefined) { s += a[i]; n++; } return n ? s / n : 3; };
+  return {
+    intimate: axis([0,16,19]), support: axis([5,2,22]), understood: axis([3,23]),
+    belonging: axis([22,8,11]), valued: axis([13,4,18]), depth: axis([12,7,14]),
+    inner: axis([20,24,21]), crowd: axis([10,9,17]), avoidance: axis([23,11]), voluntary: axis([15])
+  };
+}
+const levelOf = s => s >= 4.2 ? 'severe' : s >= 3.2 ? 'high' : s >= 2.3 ? 'mid' : 'low';
+
+const phrases = {
+  intimate: { severe: ["у вас нет близкого человека, с которым можно быть настоящим","рядом нет никого, кому вы могли бы доверить самое важное","по-настоящему близкого человека в вашей жизни сейчас нет"], high: ["близость с кем-то одним ощущается слабой","вам не хватает того единственного человека, с которым можно быть уязвимым"], mid: ["степень близости с людьми вас не всегда устраивает"], low: ["у вас есть близкий человек, с которым можно говорить откровенно","в вашей жизни присутствует настоящая душевная близость"] },
+  support: { severe: ["вам не на кого опереться, когда становится тяжело","вы чувствуете, что в трудную минуту рядом никого не окажется"], high: ["поддержка есть, но её ощутимо не хватает"], mid: ["поддержка появляется то чаще, то реже"], low: ["у вас есть надёжная опора в людях","вы знаете, к кому обратиться, — и это даёт силы"] },
+  understood: { severe: ["вас словно никто не слышит","ваши слова будто проходят мимо других"], high: ["вас понимают меньше, чем хотелось бы"], mid: ["иногда вас понимают, иногда — нет"], low: ["вы чувствуете, что вас понимают","ваши мысли находят отклик у других"] },
+  belonging: { severe: ["вы не чувствуете себя частью никакой компании","вы ощущаете себя «своим» слишком редко"], high: ["чувство принадлежности слабое"], mid: ["в одних группах вы свой, в других — нет"], low: ["вы ощущаете себя частью семьи или своей компании"] },
+  valued: { severe: ["вам часто кажется, что вы никому не нужны","возникает чувство, что до вас нет дела"], high: ["вам кажется, что вас недооценивают"], mid: ["чувство собственной ценности нестабильно"], low: ["вы чувствуете, что вас ценят и уважают"] },
+  depth: { severe: ["отношения кажутся поверхностными и не греют","вы жаждете глубокого общения, но не находите его"], high: ["в отношениях не хватает глубины"], mid: ["глубина общения то есть, то исчезает"], low: ["ваши отношения наполнены глубиной и смыслом"] },
+  inner: { severe: ["одиночество живёт внутри вас, независимо от того, кто рядом","наедине с собой вам тяжело"], high: ["внутри есть ощущение одиночества, которое не уходит"], mid: ["иногда внутри подступает одиночество"], low: ["внутри у вас спокойно, наедине с собой вы не страдаете"] },
+  crowd: { severe: ["даже среди людей вы чувствуете себя одиноким","толпа вокруг не заглушает чувство одиночества"], high: ["среди людей бывает одиноко"], mid: ["в компании бывает и хорошо, и пусто"], low: ["в компании вы не чувствуете себя лишним"] },
+  avoidance: { severe: ["страх быть непонятым заставляет вас избегать общения","вы всё чаще уходите в себя"], high: ["знакомства и новые контакты даются с усилием"], mid: ["общение с новыми людьми требует усилий, но возможно"], low: ["вам легко знакомиться и общаться с новыми людьми"] },
+  voluntary: { severe: ["вы часто остаётесь одни, хотя хотите быть с людьми"], high: ["бывает, что вы одни, хотя хочется компании"], mid: ["одиночество не всегда ваш выбор"], low: ["когда вы одни — это чаще ваш выбор"] }
+};
+const intros = {
+  low: ["Ваши ответы говорят о том, что одиночество не доминирует в вашей жизни.","По вашим ответам видно: вы живёте в контакте с людьми.","Судя по ответам, вы окружены людьми, которые вас понимают."],
+  mid: ["Ваши ответы показывают неоднозначную картину: есть и связь, и дистанция.","По вашим ответам видно: одиночество приходит, но не заполняет всю жизнь.","Судя по ответам, вы не одиноки, но есть то, чего не хватает."],
+  high: ["Ваши ответы показывают, что одиночество стало ощутимой частью жизни.","По вашим ответам видно: вы чувствуете дистанцию с людьми.","Судя по ответам, одиночество часто напоминает о себе."],
+  severe: ["Ваши ответы говорят о том, что сейчас вам действительно тяжело.","По вашим ответам видно: одиночество занимает слишком много места.","Судя по ответам, вы переживаете период серьёзной изоляции."]
+};
+const connectors = ["При этом ", "Одновременно ", "Вместе с тем ", "Также видно, что ", "Важно отметить: ", "Отдельно заметно, что "];
+
+function buildUniqueText(profile, percent, gender) {
+  const levels = {}; for (const k in profile) levels[k] = levelOf(profile[k]);
+  const overallLevel = percent <= 40 ? 'low' : percent <= 60 ? 'mid' : percent <= 80 ? 'high' : 'severe';
+  const intro = pick(intros[overallLevel]);
+  const axes = Object.entries(profile).map(([k, v]) => ({ key: k, score: v, level: levels[k] })).sort((a, b) => b.score - a.score);
+  const observations = axes.slice(0, 4).map((ax, i) => {
+    const pool = phrases[ax.key][ax.level]; if (!pool) return null;
+    const ph = pick(pool);
+    return (i === 0 ? "Видно, что " : pick(connectors)) + ph + ".";
+  }).filter(Boolean);
+  const strengths = axes.filter(ax => ax.level === 'low' || ax.level === 'mid').slice(0, 3)
+    .map(ax => { const pool = phrases[ax.key][ax.level]; return pool ? "• " + pick(pool) : null; }).filter(Boolean);
+
+  let text = intro + "\n\n";
+  if (observations.length) text += "Что показали ваши ответы:\n" + observations.map(o => "• " + o).join("\n") + "\n";
+  if (strengths.length && overallLevel !== 'severe') text += "\nВаша опора:\n" + strengths.join("\n") + "\n";
+  else if (overallLevel === 'severe') text += "\nСейчас может казаться, что опоры рядом нет. Но её можно построить — шаг за шагом, и вы не обязаны делать это в одиночку.\n";
+
+  return { title: titleFor(percent), description: text.trim(), advice: buildAdvice(levels, percent, gender) };
+}
+
+function buildAdvice(levels, percent, gender) {
+  const base = [];
+  if (percent <= 40) {
+    base.push(gender === 'female' ? "Берегите тёплые отношения с близкими — это ваша настоящая опора." : "Берегите отношения, которые у вас есть, — это ценность.");
+    base.push("Продолжайте делиться переживаниями — это делает связь глубже.");
+    base.push("Замечайте моменты тепла в общении — они важнее, чем кажется.");
+  } else if (percent <= 60) {
+    base.push(gender === 'female' ? "Позвоните старому другу — простой разговор лечит одиночество." : "Встретьтесь с кем-то лично на этой неделе — живой контакт важнее переписки.");
+    base.push("Попробуйте хобби или курсы, где можно встретить единомышленников.");
+    base.push("Заведите дневник — он помогает понять, чего именно не хватает.");
+  } else if (percent <= 80) {
+    base.push("Подумайте о работе с психологом — это забота о себе, а не слабость.");
+    base.push("Начинайте с малого: короткий разговор, сообщение, улыбка.");
+    base.push("Ограничьте соцсети — они усиливают чувство изоляции.");
+    base.push(gender === 'female' ? "Творчество помогает найти своих людей." : "Групповая активность со структурой снижает давление общения.");
+  } else {
+    base.push("Обратитесь к психотерапевту — это самый важный шаг сейчас.");
+    base.push("Если тяжело — позвоните на линию психологической помощи: анонимно и бесплатно.");
+    base.push("Не запирайтесь: даже прогулка среди людей облегчает состояние.");
+    base.push("Заботьтесь о теле: сон, прогулки, тёплая еда — база восстановления.");
+  }
+  const accents = [];
+  if (levels.avoidance === 'severe' || levels.avoidance === 'high') accents.push("Идите маленькими шагами: сначала сообщение, потом — разговор вживую.");
+  if (levels.understood === 'severe' || levels.understood === 'high') accents.push("Говорите о чувствах конкретно: «мне нужно, чтобы меня выслушали» работает лучше, чем «всё сложно».");
+  if (levels.belonging === 'severe' || levels.belonging === 'high') accents.push(gender === 'female' ? "Найдите сообщество по интересам — там легче почувствовать себя своей." : "Найдите групповое дело — общая цель сближает быстрее разговоров.");
+  if (levels.inner === 'severe' || levels.inner === 'high') accents.push(gender === 'female' ? "Ведите дневник эмоций — он раскладывает переживания по полочкам." : "Заведите ритуал: утренняя прогулка, вечерний чай. Ритуалы возвращают опору.");
+  if (levels.valued === 'severe') accents.push("Попробуйте волонтёрство — помощь другим возвращает ощущение нужности.");
+  if (levels.intimate === 'severe') accents.push("Глубокая близость строится долго и с одним человеком. Не торопите себя.");
+  const result = [...base];
+  if (accents.length) { result.push(""); result.push("Что особенно важно для вас:"); accents.slice(0, 3).forEach(a => result.push("• " + a)); }
+  return result.join("\n");
+}
+
+function buildUniversalAdvice(levels) {
+  const blocks = [
+    "• Сон 7–9 часов — фундамент настроения и сил.",
+    "• Прогулка минимум 15–20 минут в день — даже просто быть среди людей.",
+    "• Один маленький шаг в общении каждый день: сообщение, короткий разговор.",
+    "• Меньше соцсетей вечером — они усиливают чувство изоляции.",
+    "• Хобби или волонтёрство — самый лёгкий способ найти своих людей.",
+    "• Дыхание: вдох на 4 секунды, выдох на 6 — работает в любой момент тревоги.",
+    "• Солнечный свет хотя бы 10 минут в день регулирует настроение."
+  ];
+  const specific = [];
+  if (levels.inner === 'severe' || levels.inner === 'high') specific.push("• Если мысли крутятся по кругу — запишите их на бумаге. Вынесение из головы даёт облегчение.");
+  if (levels.avoidance === 'severe' || levels.avoidance === 'high') specific.push("• Если тяжело с людьми — начните с животных: собаки и кошки дают безопасный контакт.");
+  if (levels.crowd === 'severe' || levels.crowd === 'high') specific.push("• В компании найдите одного человека и поговорите с ним. Лечит один настоящий контакт, а не толпа.");
+  if (levels.support === 'severe') specific.push("• Бесплатная линия помощи 8-800-2000-122 — анонимно и круглосуточно.");
+  const shuffled = [...blocks].sort(() => Math.random() - 0.5).slice(0, 4);
+  const all = [...shuffled];
+  if (specific.length) { all.push(""); all.push("Для вашего случая особенно важно:"); all.push(...specific.slice(0, 2)); }
+  return all.join("\n");
+}
+
+function titleFor(p) { return p <= 40 ? "Низкий уровень одиночества" : p <= 60 ? "Умеренное одиночество" : p <= 80 ? "Повышенное одиночество" : "Глубокое одиночество"; }
+
+function showResult() {
+  const percent = Math.max(4, Math.min(100, Math.round((totalScore / (questions.length * 5)) * 100)));
+  goTo('screen-result');
+  const percentEl = document.getElementById('resultPercent');
+  let cur = 0;
+  const iv = setInterval(() => { cur++; percentEl.innerHTML = `${cur}<span>%</span>`; if (cur >= percent) clearInterval(iv); }, 20);
+  const circle = document.getElementById('resultCircle');
+  const C = 2 * Math.PI * 85;
+  setTimeout(() => { circle.style.strokeDashoffset = C - (percent / 100) * C; }, 200);
+
+  const profile = buildProfile(userAnswers);
+  let analysis;
+  try { analysis = buildUniqueText(profile, percent, currentGender); }
+  catch (e) { analysis = { title: titleFor(percent), description: "Ваш уровень одиночества: " + percent + "%.", advice: "• Поддерживайте связь с близкими\n• Больше живого общения" }; }
+
+  document.getElementById('resultTitle').textContent = analysis.title;
+  document.getElementById('resultDesc').textContent = analysis.description;
+  document.getElementById('adviceText').innerText = analysis.advice;
+  document.getElementById('universalText').innerText = buildUniversalAdvice(profile);
+  if (typeof lucide !== 'undefined') lucide.createIcons();
+}
+
+function restart() {
+  currentGender = null; currentQuestion = 0; totalScore = 0; userAnswers = [];
+  goTo('screen-welcome');
+  tryPlay();
+}
+
+document.addEventListener('pointerdown', e => {
+  const t = e.target.closest('.btn, .option');
+  if (t) {
+    const r = t.getBoundingClientRect();
+    const span = document.createElement('span');
+    span.className = 'ripple';
+    const size = Math.max(r.width, r.height) * 1.2;
+    span.style.width = span.style.height = size + 'px';
+    span.style.left = (e.clientX - r.left - size / 2) + 'px';
+    span.style.top = (e.clientY - r.top - size / 2) + 'px';
+    t.appendChild(span);
+    setTimeout(() => span.remove(), 750);
+  }
+  splashAt(e.clientX, e.clientY);
+});
+
+boot();
+if (typeof lucide !== 'undefined') lucide.createIcons();
+</script>
+
+</body>
+                                                                 </html>
