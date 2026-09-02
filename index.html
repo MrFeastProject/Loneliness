@@ -5,6 +5,28 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="theme-color" content="#0a0a0a">
 <title>Loneliness — Психологический тест</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<script>
+/* ============ TELEGRAM FULLSCREEN (единственное добавление) ============ */
+(function () {
+  try {
+    if (window.Telegram && Telegram.WebApp) {
+      var tg = Telegram.WebApp;
+      tg.ready();
+      tg.expand();
+      if (typeof tg.requestFullscreen === 'function') {
+        try { tg.requestFullscreen(); } catch (e) {}
+      }
+      // повторная попытка фулскрина при первом касании (если не дался сразу)
+      document.addEventListener('pointerdown', function () {
+        try {
+          if (!tg.isFullscreen && typeof tg.requestFullscreen === 'function') tg.requestFullscreen();
+        } catch (e) {}
+      }, { once: true });
+    }
+  } catch (e) {}
+})();
+</script>
 <script src="https://unpkg.com/lucide@latest"></script>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -364,7 +386,6 @@ class Drop {
       if (this.vy > vmax) this.vy = vmax;
       this.y += this.vy; this.wob += this.wobSpeed;
       this.x += Math.sin(this.wob) * 0.35;
-      /* === ИСПРАВЛЕНО: след рисуется реже и слабее, чтобы не засорять экран === */
       if (this.vy > 0.8 && this.age % 5 === 0) {
         tctx.globalAlpha = 0.025;
         tctx.fillStyle = '#c8c8c8';
@@ -450,12 +471,10 @@ function resize() {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   }
   buildScene();
-  /* === ИСПРАВЛЕНО: умеренное количество капель как в первой версии (80) === */
   const td = 80;
   capDrops = td + 40;
   while (drops.length < td) drops.push(new Drop(true));
   drops.length = Math.min(drops.length, capDrops);
-  /* === ИСПРАВЛЕНО: меньше фоновых полос (25) === */
   const ts = 25;
   while (streaks.length < ts) streaks.push(new Streak(true));
   streaks.length = ts;
@@ -482,7 +501,6 @@ function animate() {
   for (const s of streaks) { s.update(wind); s.draw(bctx, wind); }
   if (flash > 0.02) { bctx.fillStyle = `rgba(255,255,255,${flash * 0.09})`; bctx.fillRect(0, 0, W, H); }
 
-  /* === ИСПРАВЛЕНО: следы испаряются в 8 раз быстрее (0.12 вместо 0.015) — фон остаётся чистым === */
   tctx.globalCompositeOperation = 'destination-out';
   tctx.fillStyle = 'rgba(0,0,0,0.12)';
   tctx.fillRect(0, 0, W, H);
@@ -756,4 +774,4 @@ if (typeof lucide !== 'undefined') lucide.createIcons();
 </script>
 
 </body>
-                                                                 </html>
+</html>
