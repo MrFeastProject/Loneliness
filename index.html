@@ -5,29 +5,81 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="theme-color" content="#0a0a0a">
 <title>Loneliness — Психологический тест</title>
-<script src="https://telegram.org/js/telegram-web-app.js"></script>
 <script>
-/* ============ TELEGRAM FULLSCREEN (единственное добавление) ============ */
+/* ============ КЭШ АССЕТОВ (иконки, Telegram API) В INDEXEDDB + FULLSCREEN ============ */
 (function () {
-  try {
-    if (window.Telegram && Telegram.WebApp) {
-      var tg = Telegram.WebApp;
-      tg.ready();
-      tg.expand();
-      if (typeof tg.requestFullscreen === 'function') {
-        try { tg.requestFullscreen(); } catch (e) {}
+  var DB = 'loneliness-db', STORE = 'assets';
+  var ASSETS = [
+    { key: 'telegram', url: 'https://telegram.org/js/telegram-web-app.js' },
+    { key: 'lucide',   url: 'https://unpkg.com/lucide@latest' }
+  ];
+
+  function openDB() {
+    return new Promise(function (res, rej) {
+      try {
+        var req = indexedDB.open(DB, 1);
+        req.onupgradeneeded = function () { req.result.createObjectStore(STORE); };
+        req.onsuccess = function () { res(req.result); };
+        req.onerror = function () { rej(req.error); };
+        req.onblocked = function () { rej(new Error('blocked')); };
+      } catch (e) { rej(e); }
+    });
+  }
+  function dbGet(d, k) { return new Promise(function (res, rej) { try { var q = d.transaction(STORE, 'readonly').objectStore(STORE).get(k); q.onsuccess = function () { res(q.result); }; q.onerror = function () { rej(q.error); }; } catch (e) { rej(e); } }); }
+  function dbSet(d, k, v) { return new Promise(function (res, rej) { try { var q = d.transaction(STORE, 'readwrite').objectStore(STORE).put(v, k); q.onsuccess = function () { res(); }; q.onerror = function () { rej(q.error); }; } catch (e) { rej(e); } }); }
+
+  function injectText(text) { var s = document.createElement('script'); s.textContent = text; (document.head || document.documentElement).appendChild(s); }
+  function injectSrc(url) {
+    return new Promise(function (res) {
+      var s = document.createElement('script');
+      s.src = url; s.onload = res; s.onerror = res;
+      (document.head || document.documentElement).appendChild(s);
+    });
+  }
+
+  var dbP = null;
+  function db() { if (!dbP) dbP = openDB(); return dbP; }
+
+  async function loadAsset(item) {
+    // 1) Сначала из кэша IndexedDB — мгновенно, без сети
+    try {
+      var d = await db();
+      var cached = await dbGet(d, item.key);
+      if (cached && typeof cached === 'string' && cached.length > 100) { injectText(cached); return; }
+    } catch (e) {}
+    // 2) Иначе из сети + сохраняем в кэш на следующий раз
+    try {
+      var resp = await fetch(item.url);
+      if (!resp.ok) throw new Error('bad');
+      var text = await resp.text();
+      injectText(text);
+      try { var d2 = await db(); await dbSet(d2, item.key, text); } catch (e) {}
+      return;
+    } catch (e) {}
+    // 3) Фолбэк: обычный script src
+    await injectSrc(item.url);
+  }
+
+  function initTelegramFullscreen() {
+    try {
+      if (window.Telegram && Telegram.WebApp) {
+        var tg = Telegram.WebApp;
+        tg.ready(); tg.expand();
+        if (typeof tg.requestFullscreen === 'function') { try { tg.requestFullscreen(); } catch (e) {} }
+        document.addEventListener('pointerdown', function () {
+          try { if (!tg.isFullscreen && typeof tg.requestFullscreen === 'function') tg.requestFullscreen(); } catch (e) {}
+        }, { once: true });
       }
-      // повторная попытка фулскрина при первом касании (если не дался сразу)
-      document.addEventListener('pointerdown', function () {
-        try {
-          if (!tg.isFullscreen && typeof tg.requestFullscreen === 'function') tg.requestFullscreen();
-        } catch (e) {}
-      }, { once: true });
-    }
-  } catch (e) {}
+    } catch (e) {}
+  }
+
+  (async function () {
+    for (var i = 0; i < ASSETS.length; i++) await loadAsset(ASSETS[i]);
+    initTelegramFullscreen();
+    if (window.lucide) { try { lucide.createIcons(); } catch (e) {} }
+  })();
 })();
 </script>
-<script src="https://unpkg.com/lucide@latest"></script>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   :root { --bg:#0a0a0a; --fg:#f5f5f5; --muted:#888; --glass:rgba(20,20,20,0.55); --glass-border:rgba(255,255,255,0.08); }
@@ -63,6 +115,14 @@
   .subtitle { text-align: center; color: var(--muted); font-size: clamp(0.7rem,2.4vw,0.95rem); letter-spacing: 0.1em; margin-bottom: 26px; font-weight: 300; }
   .quote { text-align: center; font-style: italic; color: #b0b0b0; padding: 18px 8px; border-top: 1px solid rgba(255,255,255,0.06); border-bottom: 1px solid rgba(255,255,255,0.06); margin-bottom: 26px; line-height: 1.6; font-size: clamp(0.85rem,2.6vw,1rem); }
 
+  #screen-disclaimer .card { animation: slowIn 5s ease forwards; }
+  #screen-disclaimer.leaving .card { animation: slowOut 5s ease forwards; }
+  @keyframes slowIn { from { opacity: 0; transform: translateY(24px) scale(0.97); } to { opacity: 1; transform: none; } }
+  @keyframes slowOut { from { opacity: 1; } to { opacity: 0; } }
+  .disc-icon { width: 64px; height: 64px; margin: 0 auto 18px; color: #ddd; display: block; }
+  .disc-title { text-align: center; font-size: 1.15rem; letter-spacing: 0.25em; text-transform: uppercase; font-weight: 300; margin-bottom: 16px; }
+  .disc-text { color: #aaa; line-height: 1.7; font-size: 0.9rem; text-align: center; margin-bottom: 24px; }
+
   .btn, .option { position: relative; overflow: hidden; }
   .btn { display: inline-flex; align-items: center; justify-content: center; gap: 10px; width: 100%; padding: 16px 24px; background: linear-gradient(180deg, rgba(255,255,255,0.1), rgba(255,255,255,0.02)); color: var(--fg); border: 1px solid rgba(255,255,255,0.15); border-radius: 14px; font-size: 1rem; letter-spacing: 0.05em; cursor: pointer; transition: all 0.25s ease; font-family: inherit; user-select: none; touch-action: manipulation; }
   .btn:hover { background: linear-gradient(180deg, rgba(255,255,255,0.18), rgba(255,255,255,0.05)); border-color: rgba(255,255,255,0.35); transform: translateY(-1px); box-shadow: 0 6px 24px rgba(0,0,0,0.5), 0 0 18px rgba(255,255,255,0.06); }
@@ -70,6 +130,10 @@
   .btn + .btn { margin-top: 12px; }
   .btn::after, .option::after { content: ""; position: absolute; top: 0; left: -70%; width: 45%; height: 100%; background: linear-gradient(100deg, transparent, rgba(255,255,255,0.14), transparent); transform: skewX(-20deg); transition: left 0.7s ease; pointer-events: none; }
   .btn:hover::after, .option:hover::after { left: 125%; }
+
+  .acc-btn { flex-direction: column; gap: 6px; padding: 18px 20px; }
+  .acc-btn b { font-size: 1.05rem; font-weight: 500; letter-spacing: 0.08em; }
+  .acc-btn small { color: var(--muted); font-size: 0.75rem; letter-spacing: 0.04em; }
 
   .ripple { position: absolute; border-radius: 50%; background: radial-gradient(circle, rgba(255,255,255,0.35) 0%, rgba(255,255,255,0.12) 45%, transparent 70%); transform: scale(0); animation: ripple 0.7s ease-out forwards; pointer-events: none; }
   @keyframes ripple { to { transform: scale(2.6); opacity: 0; } }
@@ -85,6 +149,10 @@
   .option { padding: 15px 18px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; color: #ddd; cursor: pointer; transition: all 0.2s ease; font-size: 1rem; text-align: left; font-family: inherit; user-select: none; touch-action: manipulation; }
   .option:hover { background: rgba(255,255,255,0.1); border-color: rgba(255,255,255,0.3); transform: translateX(4px); box-shadow: 0 4px 18px rgba(0,0,0,0.4); }
   .option:active { transform: scale(0.98); background: rgba(255,255,255,0.16); }
+
+  .text-input { width: 100%; min-height: 96px; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.12); border-radius: 12px; color: var(--fg); padding: 12px 14px; font-family: inherit; font-size: 0.95rem; line-height: 1.5; resize: vertical; outline: none; transition: border-color 0.2s; }
+  .text-input:focus { border-color: rgba(255,255,255,0.35); }
+  .text-input::placeholder { color: #666; }
 
   .result-circle { width: clamp(150px,48vw,200px); height: clamp(150px,48vw,200px); margin: 18px auto; position: relative; display: flex; align-items: center; justify-content: center; }
   .result-circle svg { width: 100%; height: 100%; transform: rotate(-90deg); }
@@ -131,7 +199,7 @@
         Этот тест покажет, насколько вы чувствуете себя одиноким. Отвечайте честно — правильных ответов не существует.
       </p>
       <button class="btn" onclick="goTo('screen-gender')"><i data-lucide="cloud-rain"></i> Начать</button>
-      <div class="footer-note">25 вопросов · ~5 минут</div>
+      <div class="footer-note">25–45 вопросов · ~5–8 минут</div>
     </div>
   </div>
 
@@ -144,6 +212,33 @@
         <button class="btn" onclick="selectGender('male')"><i data-lucide="user"></i> Мужчина</button>
         <button class="btn" onclick="selectGender('female')"><i data-lucide="user"></i> Женщина</button>
       </div>
+    </div>
+  </div>
+
+  <div class="screen" id="screen-disclaimer">
+    <div class="card">
+      <svg class="disc-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/>
+        <path d="M12 8v4"/><path d="M12 16h.01"/>
+      </svg>
+      <div class="disc-title">Дисклеймер</div>
+      <div class="disc-text">Данный психологический тест не может выдать точный результат — только приблизительный. Все результаты не сохраняются и никуда не отправляются, поэтому всё анонимно и безопасно. Отвечайте максимально честно и максимально приблизительно (насколько возможно), чтобы добиться более точного результата*</div>
+      <button class="btn" id="disclaimerBtn" onclick="acceptDisclaimer()">Понял</button>
+    </div>
+  </div>
+
+  <div class="screen" id="screen-accuracy">
+    <div class="card">
+      <h1 style="font-size:clamp(1.4rem,5vw,2rem);">Точность</h1>
+      <div class="subtitle">ВЫБЕРИТЕ РЕЖИМ ТЕСТА</div>
+      <button class="btn acc-btn" onclick="startQuiz('normal')">
+        <b>Обычная</b>
+        <small>25 вопросов · менее точный результат</small>
+      </button>
+      <button class="btn acc-btn" style="margin-top:12px;" onclick="startQuiz('deep')">
+        <b>Глубокая</b>
+        <small>35–50 вопросов · более точный результат</small>
+      </button>
     </div>
   </div>
 
@@ -181,7 +276,7 @@
       <div class="result-title" id="resultTitle">—</div>
       <div class="result-desc" id="resultDesc">—</div>
       <div class="advice"><div class="advice-title"><i data-lucide="heart-handshake"></i> Персональные рекомендации</div><div id="adviceText"></div></div>
-      <div class="advice"><div class="advice-title"><i data-lucide="leaf"></i> Универсальный совет</div><div id="universalText"></div></div>
+      <div class="advice"><div class="advice-title"><i data-lucide="heart"></i> Душевная поддержка</div><div id="supportText"></div></div>
       <button class="btn" style="margin-top:24px;" onclick="restart()"><i data-lucide="rotate-ccw"></i> Пройти ещё раз</button>
     </div>
   </div>
@@ -207,8 +302,8 @@ function tryPlay() {
   const p = music.play();
   if (p) p.then(() => { musicOn = true; }).catch(() => {});
 }
+function startMusic() { tryPlay(); }
 function stopMusic() { music.pause(); musicOn = false; }
-['pointerdown','keydown','touchend'].forEach(ev => window.addEventListener(ev, tryPlay));
 
 function openDB() {
   return new Promise((res, rej) => {
@@ -228,7 +323,6 @@ function finishBoot() {
   if (bootFinished) return;
   bootFinished = true;
   goTo('screen-welcome');
-  tryPlay();
 }
 
 async function boot() {
@@ -449,6 +543,12 @@ function refreshHotspots() {
     .map(el => { const r = el.getBoundingClientRect(); return { el, x: r.left, y: r.top, w: r.width, h: r.height, water: waterMap.get(el) || rand(0, 0.2), seed: Math.random() }; })
     .filter(h => h.w > 0);
 }
+let hsPending = false, hsLast = 0;
+function scheduleHotspots() {
+  const now = Date.now();
+  if (now - hsLast > 200) { hsLast = now; requestAnimationFrame(refreshHotspots); }
+  else if (!hsPending) { hsPending = true; setTimeout(() => { hsPending = false; hsLast = Date.now(); requestAnimationFrame(refreshHotspots); }, 200); }
+}
 function addDrop(props) {
   let d;
   if (drops.length < capDrops) { d = new Drop(false); drops.push(d); }
@@ -481,8 +581,9 @@ function resize() {
   refreshHotspots();
 }
 resize();
-window.addEventListener('resize', resize);
-document.querySelector('.app').addEventListener('scroll', () => requestAnimationFrame(refreshHotspots));
+let rsT;
+window.addEventListener('resize', () => { clearTimeout(rsT); rsT = setTimeout(resize, 200); });
+document.querySelector('.app').addEventListener('scroll', scheduleHotspots);
 
 function animate() {
   frame++;
@@ -548,40 +649,85 @@ function animate() {
 animate();
 
 /* ================= ТЕСТ ================= */
-const questions = [
-  { q: "Есть ли у вас близкий человек, которому вы можете рассказать о своих переживаниях?" },
-  { q: "Чувствуете ли вы, что вам не с кем поговорить?" },
-  { q: "Есть ли рядом люди, с которыми вам тепло и спокойно?" },
-  { q: "Чувствуете ли вы, что никто вас по-настоящему не понимает?" },
-  { q: "Бывает ли у вас чувство, что вы никому не нужны?" },
-  { q: "Есть ли человек, к которому можно обратиться за помощью, когда тяжело?" },
-  { q: "Часто ли общение с людьми не приносит вам радости?" },
-  { q: "Хватает ли вам близкого человека рядом?" },
-  { q: "Есть ли люди, которым интересны те же вещи, что и вам?" },
-  { q: "Чувствуете ли вы себя далеко от других людей?" },
-  { q: "Бывает ли вам одиноко даже среди людей?" },
-  { q: "Легко ли вам знакомиться и общаться с новыми людьми?" },
-  { q: "Чувствуете ли вы, что в ваших отношениях с людьми нет настоящей близости?" },
-  { q: "Чувствуете ли вы, что люди вас ценят и уважают?" },
-  { q: "Хватает ли вам простого тёплого общения?" },
-  { q: "Бывает ли, что вы остаётесь один, хотя хотите быть с людьми?" },
-  { q: "Есть ли человек, с которым можно поделиться всем, что на душе?" },
-  { q: "Чувствуете ли вы себя чужим среди людей?" },
-  { q: "Кажется ли вам, что до вас никому нет дела?" },
-  { q: "Есть ли человек, с которым вы чувствуете себя по-настоящему близко?" },
-  { q: "Чувствуете ли вы одиночество внутри себя?" },
-  { q: "Чувствуете ли вы себя лишним в компании?" },
-  { q: "Чувствуете ли вы себя частью семьи, компании друзей или коллектива?" },
-  { q: "Избегаете ли вы общения из страха, что вас не поймут?" },
-  { q: "Тяжело ли вам оставаться наедине с собой?" }
+const baseQuestions = [
+  { q: "Есть ли у вас близкий человек, которому вы можете рассказать о своих переживаниях?", type:'scale', reverse:true },
+  { q: "Чувствуете ли вы, что вам не с кем поговорить?", type:'scale', reverse:false },
+  { q: "Есть ли рядом люди, с которыми вам тепло и спокойно?", type:'scale', reverse:true },
+  { q: "Чувствуете ли вы, что никто вас по-настоящему не понимает?", type:'scale', reverse:false },
+  { q: "Бывает ли у вас чувство, что вы никому не нужны?", type:'scale', reverse:false },
+  { q: "Есть ли человек, к которому можно обратиться за помощью, когда тяжело?", type:'scale', reverse:true },
+  { q: "Часто ли общение с людьми не приносит вам радости?", type:'scale', reverse:false },
+  { q: "Хватает ли вам близкого человека рядом?", type:'scale', reverse:true },
+  { q: "Есть ли люди, которым интересны те же вещи, что и вам?", type:'scale', reverse:true },
+  { q: "Чувствуете ли вы себя далеко от других людей?", type:'scale', reverse:false },
+  { q: "Бывает ли вам одиноко даже среди людей?", type:'scale', reverse:false },
+  { q: "Легко ли вам знакомиться и общаться с новыми людьми?", type:'scale', reverse:true },
+  { q: "Чувствуете ли вы, что в ваших отношениях с людьми нет настоящей близости?", type:'scale', reverse:false },
+  { q: "Чувствуете ли вы, что люди вас ценят и уважают?", type:'scale', reverse:true },
+  { q: "Хватает ли вам простого тёплого общения?", type:'scale', reverse:true },
+  { q: "Бывает ли, что вы остаётесь один, хотя хотите быть с людьми?", type:'scale', reverse:false },
+  { q: "Есть ли человек, с которым можно поделиться всем, что на душе?", type:'scale', reverse:true },
+  { q: "Чувствуете ли вы себя чужим среди людей?", type:'scale', reverse:false },
+  { q: "Кажется ли вам, что до вас никому нет дела?", type:'scale', reverse:false },
+  { q: "Есть ли человек, с которым вы чувствуете себя по-настоящему близко?", type:'scale', reverse:true },
+  { q: "Чувствуете ли вы одиночество внутри себя?", type:'scale', reverse:false },
+  { q: "Чувствуете ли вы себя лишним в компании?", type:'scale', reverse:false },
+  { q: "Чувствуете ли вы себя частью семьи, компании друзей или коллектива?", type:'scale', reverse:true },
+  { q: "Избегаете ли вы общения из страха, что вас не поймут?", type:'scale', reverse:false },
+  { q: "Тяжело ли вам оставаться наедине с собой?", type:'scale', reverse:false }
 ];
-const reverseMap = [true,false,true,false,false,true,false,true,true,false,false,true,false,true,true,false,true,false,false,true,false,false,true,false,false];
-const options = [
+
+const ctx = { flags: { partner:false, like:false, confessed:false }, texts: {} };
+const extraAxis = {};
+function pushAxis(axis, score) { (extraAxis[axis] = extraAxis[axis] || []).push(score); }
+
+const deepQuestions = [
+  { id:'partner', q: () => "Есть ли у тебя вторая половинка?", type:'custom',
+    options:[{text:"Да",score:1},{text:"Нет",score:3}],
+    onAnswer: v => { ctx.flags.partner = (v === 1); }, axis:'intimate' },
+  { id:'like', when: c => !c.flags.partner, q: g => g === 'female' ? "Нравится ли тебе какой-то парень?" : "Нравится ли тебе какая-то девочка?",
+    type:'custom', options:[{text:"Да",score:3},{text:"Нет",score:2}],
+    onAnswer: v => { ctx.flags.like = (v === 3); } },
+  { id:'confess', when: c => c.flags.like, q: g => g === 'female' ? "Признавалась ли ты ему в любви?" : "Признавался ли ты ей в любви?",
+    type:'custom', options:[{text:"Да",score:2},{text:"Нет",score:3}],
+    onAnswer: v => { ctx.flags.confessed = (v === 2); } },
+  { id:'response', when: c => c.flags.confessed, q: g => g === 'female' ? "Что он ответил в ответ?" : "Что она ответила в ответ?",
+    type:'text', placeholder:"Напиши своими словами...", key:'confessResponse' },
+  { id:'why_not', when: c => c.flags.like && !c.flags.confessed, q: () => "Почему пока не признался(ась)?",
+    type:'custom', options:[{text:"Страх отказа",score:4},{text:"Не уверен(а) в своих чувствах",score:2},{text:"Жду подходящего момента",score:2},{text:"Это невозможно",score:5}], axis:'avoidance' },
+  { id:'partner_support', when: c => c.flags.partner, q: () => "Чувствуешь ли ты поддержку и понимание от своей половинки?", type:'scale', reverse:true, axis:'intimate' },
+  { id:'partner_lonely', when: c => c.flags.partner, q: () => "Бывает ли тебе одиноко даже рядом с ней/ним?", type:'scale', reverse:false, axis:'intimate' },
+  { id:'friends', q: () => "Сколько у тебя по-настоящему близких друзей?", type:'custom', axis:'support',
+    options:[{text:"Ни одного",score:5},{text:"Один",score:4},{text:"2–3",score:2},{text:"4 и больше",score:1}] },
+  { id:'meet', q: () => "Как часто ты встречаешься с друзьями вживую?", type:'custom', axis:'belonging',
+    options:[{text:"Каждый день",score:1},{text:"Пару раз в неделю",score:2},{text:"Раз в месяц",score:3},{text:"Реже",score:4},{text:"Никогда",score:5}] },
+  { id:'family', q: () => "Как часто ты общаешься с семьёй или родными?", type:'custom', axis:'belonging',
+    options:[{text:"Каждый день",score:1},{text:"Пару раз в неделю",score:2},{text:"Раз в месяц",score:3},{text:"Реже",score:4},{text:"Не общаюсь",score:5}] },
+  { id:'first', q: () => "Друзья пишут или звонят тебе первыми?", type:'scale', reverse:true, axis:'support' },
+  { id:'evening', q: () => "Что ты обычно чувствуешь вечером, когда остаёшься один(на)?", type:'custom', axis:'inner',
+    options:[{text:"Спокойствие",score:1},{text:"Лёгкую грусть",score:3},{text:"Тоску",score:4},{text:"Тревогу",score:5}] },
+  { id:'social', q: () => "Сколько часов в день ты проводишь в соцсетях?", type:'custom', axis:'depth',
+    options:[{text:"Меньше часа",score:1},{text:"1–2 часа",score:2},{text:"3–4 часа",score:3},{text:"Больше 4 часов",score:4}] },
+  { id:'pet', q: () => "Есть ли у тебя домашнее животное?", type:'custom', axis:'support',
+    options:[{text:"Да",score:1},{text:"Нет",score:3}] },
+  { id:'dream', q: () => "Есть ли человек, с которым ты давно хочешь поговорить, но не решаешься?", type:'custom', axis:'avoidance',
+    options:[{text:"Да",score:4},{text:"Нет",score:1}] },
+  { id:'help_ask', q: () => "Легко ли тебе просить о помощи?", type:'scale', reverse:true, axis:'support' },
+  { id:'weekend', q: () => "Как ты обычно проводишь выходные?", type:'custom', axis:'voluntary',
+    options:[{text:"С людьми",score:1},{text:"По-разному",score:2},{text:"В одиночестве — это мой выбор",score:2},{text:"В одиночестве — поневоле",score:4}] },
+  { id:'worry', q: () => "Напиши, что тебя больше всего беспокоит прямо сейчас", type:'text', placeholder:"Поделись — это останется только у тебя...", key:'worry' },
+  { id:'alone_mean', q: () => "Что для тебя означает слово «одиночество»?", type:'text', placeholder:"Пара слов своими словами...", key:'aloneMean' }
+];
+
+const scaleOptions = [
   { text: "Да", score: 5 }, { text: "Скорее да", score: 4 }, { text: "Иногда", score: 3 },
   { text: "Скорее нет", score: 2 }, { text: "Нет", score: 1 }
 ];
 
-let currentGender = null, currentQuestion = 0, totalScore = 0, userAnswers = [];
+let currentGender = null, mode = 'normal';
+let qList = [], qPtr = 0;
+let totalScore = 0, scoredCount = 0;
+let userBaseAnswers = [];
 
 function goTo(id) {
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
@@ -591,40 +737,105 @@ function goTo(id) {
   requestAnimationFrame(refreshHotspots);
   if (typeof lucide !== 'undefined') lucide.createIcons();
 }
-function selectGender(g) { currentGender = g; currentQuestion = 0; totalScore = 0; userAnswers = []; goTo('screen-quiz'); renderQuestion(); }
+
+function selectGender(g) {
+  currentGender = g;
+  document.getElementById('disclaimerBtn').textContent = g === 'female' ? 'Поняла' : 'Понял';
+  goTo('screen-disclaimer');
+}
+
+function acceptDisclaimer() {
+  const scr = document.getElementById('screen-disclaimer');
+  if (scr.classList.contains('leaving')) return;
+  scr.classList.add('leaving');
+  setTimeout(() => {
+    scr.classList.remove('leaving');
+    startMusic();
+    goTo('screen-accuracy');
+  }, 5000);
+}
+
+function startQuiz(m) {
+  mode = m;
+  qList = m === 'deep' ? baseQuestions.concat(deepQuestions) : baseQuestions.slice();
+  qPtr = 0; totalScore = 0; scoredCount = 0; userBaseAnswers = [];
+  ctx.flags = { partner:false, like:false, confessed:false };
+  ctx.texts = {};
+  for (const k in extraAxis) delete extraAxis[k];
+  goTo('screen-quiz'); renderQuestion();
+}
+
+function currentQ() { return qList[qPtr]; }
+function advance() {
+  if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+  qPtr++;
+  while (qPtr < qList.length && qList[qPtr].when && !qList[qPtr].when(ctx)) qPtr++;
+  if (qPtr >= qList.length) generateResult();
+  else renderQuestion();
+}
+
 function renderQuestion() {
-  const q = questions[currentQuestion], total = questions.length;
-  document.getElementById('progressText').textContent = `Вопрос ${currentQuestion + 1} из ${total}`;
-  document.getElementById('progressFill').style.width = (currentQuestion / total * 100) + '%';
+  const q = currentQ();
+  const estTotal = mode === 'deep' ? 40 : 25;
+  document.getElementById('progressText').textContent = mode === 'deep' ? `Вопрос ${qPtr + 1}` : `Вопрос ${qPtr + 1} из 25`;
+  document.getElementById('progressFill').style.width = Math.min(100, (qPtr / estTotal) * 100) + '%';
   const qt = document.getElementById('questionText');
-  qt.textContent = q.q;
+  qt.textContent = typeof q.q === 'function' ? q.q(currentGender) : q.q;
   qt.classList.remove('swap'); void qt.offsetWidth; qt.classList.add('swap');
+
   const list = document.getElementById('optionsList');
   list.innerHTML = '';
-  options.forEach(opt => {
+
+  if (q.type === 'text') {
+    const ta = document.createElement('textarea');
+    ta.className = 'text-input';
+    ta.placeholder = q.placeholder || '';
+    list.appendChild(ta);
     const btn = document.createElement('button');
-    btn.className = 'option'; btn.textContent = opt.text;
-    btn.onclick = () => answer(opt.score);
+    btn.className = 'btn';
+    btn.style.marginTop = '12px';
+    btn.textContent = 'Дальше';
+    btn.onclick = () => { ctx.texts[q.key] = ta.value.trim(); advance(); };
     list.appendChild(btn);
-  });
+  } else {
+    const opts = q.type === 'custom' ? q.options : scaleOptions;
+    opts.forEach(opt => {
+      const btn = document.createElement('button');
+      btn.className = 'option'; btn.textContent = opt.text;
+      btn.onclick = () => answerScored(q, opt.score);
+      list.appendChild(btn);
+    });
+  }
   requestAnimationFrame(refreshHotspots);
 }
-function answer(score) {
-  const finalScore = reverseMap[currentQuestion] ? (6 - score) : score;
-  totalScore += finalScore; userAnswers.push(finalScore);
-  currentQuestion++;
-  currentQuestion >= questions.length ? generateResult() : renderQuestion();
+
+function answerScored(q, score) {
+  const finalScore = (q.type === 'scale' && q.reverse) ? (6 - score) : score;
+  totalScore += finalScore; scoredCount++;
+  const bi = baseQuestions.indexOf(q);
+  if (bi > -1) userBaseAnswers[bi] = finalScore;
+  if (q.axis) pushAxis(q.axis, finalScore);
+  if (q.onAnswer) q.onAnswer(score);
+  advance();
 }
+
 function generateResult() { stopMusic(); goTo('screen-generating'); setTimeout(showResult, 3500); }
 
 /* ============ УНИКАЛЬНАЯ ГЕНЕРАЦИЯ ============ */
 function buildProfile(a) {
   const axis = idx => { let s = 0, n = 0; for (const i of idx) if (a[i] !== undefined) { s += a[i]; n++; } return n ? s / n : 3; };
-  return {
+  const base = {
     intimate: axis([0,16,19]), support: axis([5,2,22]), understood: axis([3,23]),
     belonging: axis([22,8,11]), valued: axis([13,4,18]), depth: axis([12,7,14]),
     inner: axis([20,24,21]), crowd: axis([10,9,17]), avoidance: axis([23,11]), voluntary: axis([15])
   };
+  for (const k in base) {
+    if (extraAxis[k] && extraAxis[k].length) {
+      const ex = extraAxis[k].reduce((s, v) => s + v, 0) / extraAxis[k].length;
+      base[k] = (base[k] + ex) / 2;
+    }
+  }
+  return base;
 }
 const levelOf = s => s >= 4.2 ? 'severe' : s >= 3.2 ? 'high' : s >= 2.3 ? 'mid' : 'low';
 
@@ -702,31 +913,55 @@ function buildAdvice(levels, percent, gender) {
   return result.join("\n");
 }
 
-function buildUniversalAdvice(levels) {
-  const blocks = [
-    "• Сон 7–9 часов — фундамент настроения и сил.",
-    "• Прогулка минимум 15–20 минут в день — даже просто быть среди людей.",
-    "• Один маленький шаг в общении каждый день: сообщение, короткий разговор.",
-    "• Меньше соцсетей вечером — они усиливают чувство изоляции.",
-    "• Хобби или волонтёрство — самый лёгкий способ найти своих людей.",
-    "• Дыхание: вдох на 4 секунды, выдох на 6 — работает в любой момент тревоги.",
-    "• Солнечный свет хотя бы 10 минут в день регулирует настроение."
-  ];
-  const specific = [];
-  if (levels.inner === 'severe' || levels.inner === 'high') specific.push("• Если мысли крутятся по кругу — запишите их на бумаге. Вынесение из головы даёт облегчение.");
-  if (levels.avoidance === 'severe' || levels.avoidance === 'high') specific.push("• Если тяжело с людьми — начните с животных: собаки и кошки дают безопасный контакт.");
-  if (levels.crowd === 'severe' || levels.crowd === 'high') specific.push("• В компании найдите одного человека и поговорите с ним. Лечит один настоящий контакт, а не толпа.");
-  if (levels.support === 'severe') specific.push("• Бесплатная линия помощи 8-800-2000-122 — анонимно и круглосуточно.");
-  const shuffled = [...blocks].sort(() => Math.random() - 0.5).slice(0, 4);
-  const all = [...shuffled];
-  if (specific.length) { all.push(""); all.push("Для вашего случая особенно важно:"); all.push(...specific.slice(0, 2)); }
-  return all.join("\n");
+/* Душевная поддержка — все окончания по выбранному полу */
+function buildSupport(percent, gender) {
+  const m = gender !== 'female';
+  const gotov   = m ? 'готов' : 'готова';
+  const sdelal  = m ? 'сделал' : 'сделала';
+  const doveril = m ? 'доверил' : 'доверила';
+  const progov  = m ? 'проговорил' : 'проговорила';
+  const poddel  = m ? 'поделился' : 'поделилась';
+  const byl     = m ? 'был' : 'была';
+  const chesten = m ? 'честен' : 'честна';
+  const proshel = m ? 'прошёл' : 'прошла';
+  const kSebe   = m ? 'настоящему' : 'настоящей';
+
+  const lines = [];
+  lines.push(pick([
+    "Какой бы ни был результат — ты не «одинокий человек». Ты человек, которому сейчас бывает одиноко. Это разные вещи, и первое — неправда.",
+    "Твои чувства важны, и ты имеешь право на них. Одиночество — не слабость и не вина. Это сигнал, что тебе хочется тепла — и это нормально.",
+    "Даже в самый тихий вечер где-то есть человек, который вспомнит о тебе с теплом. Ты значишь больше, чем кажется в моменты грусти."
+  ]));
+  lines.push("");
+  lines.push(pick([
+    "Помни: близость начинается с одного маленького шага — одного сообщения, одного честного слова. Ты можешь сделать его, когда будешь " + gotov + ".",
+    "Не торопи себя. Иногда первый шаг — просто разрешить себе хотеть тепла. Ты уже " + sdelal + " многое, пройдя этот тест честно."
+  ]));
+  if (ctx.texts.worry) {
+    lines.push("");
+    lines.push("Ты " + doveril + " нам, что тебя беспокоит: «" + ctx.texts.worry + "». Уже то, что ты это " + progov + ", — сила. С этим не обязательно справляться в одиночку — попробуй рассказать это человеку, которому доверяешь, или специалисту.");
+  }
+  if (ctx.texts.confessResponse) {
+    lines.push("");
+    lines.push("Ты " + poddel + " историей признания. Ответ был: «" + ctx.texts.confessResponse + "». Что бы это ни значило — твоя смелость сказать о чувствах уже делает тебя сильнее большинства. Береги эту смелость.");
+  }
+  if (ctx.flags.like && !ctx.flags.confessed) {
+    lines.push("");
+    lines.push("Признаться — страшно. Но чувства, о которых молчат годами, часто тяжелее слов, сказанных вслух. Когда будешь " + gotov + " — ты справишься. И какой бы ни был ответ, ты не пожалеешь, что " + byl + " " + chesten + " с собой.");
+  }
+  if (ctx.flags.partner) {
+    lines.push("");
+    lines.push("Твоя половинка — твоя опора. Попробуй сегодня сказать ей/ему что-то тёплое или просто поблагодарить за то, что она/он есть. Близость растёт из маленьких слов.");
+  }
+  lines.push("");
+  lines.push("И главное: ты " + proshel + " этот путь до конца — это говорит о том, что ты " + gotov + " смотреть на себя честно. А это уже огромный шаг к себе " + kSebe + ". Береги себя. 🤍");
+  return lines.join("\n");
 }
 
 function titleFor(p) { return p <= 40 ? "Низкий уровень одиночества" : p <= 60 ? "Умеренное одиночество" : p <= 80 ? "Повышенное одиночество" : "Глубокое одиночество"; }
 
 function showResult() {
-  const percent = Math.max(4, Math.min(100, Math.round((totalScore / (questions.length * 5)) * 100)));
+  const percent = Math.max(4, Math.min(100, Math.round((totalScore / (scoredCount * 5)) * 100)));
   goTo('screen-result');
   const percentEl = document.getElementById('resultPercent');
   let cur = 0;
@@ -735,7 +970,7 @@ function showResult() {
   const C = 2 * Math.PI * 85;
   setTimeout(() => { circle.style.strokeDashoffset = C - (percent / 100) * C; }, 200);
 
-  const profile = buildProfile(userAnswers);
+  const profile = buildProfile(userBaseAnswers);
   let analysis;
   try { analysis = buildUniqueText(profile, percent, currentGender); }
   catch (e) { analysis = { title: titleFor(percent), description: "Ваш уровень одиночества: " + percent + "%.", advice: "• Поддерживайте связь с близкими\n• Больше живого общения" }; }
@@ -743,14 +978,14 @@ function showResult() {
   document.getElementById('resultTitle').textContent = analysis.title;
   document.getElementById('resultDesc').textContent = analysis.description;
   document.getElementById('adviceText').innerText = analysis.advice;
-  document.getElementById('universalText').innerText = buildUniversalAdvice(profile);
+  document.getElementById('supportText').innerText = buildSupport(percent, currentGender);
   if (typeof lucide !== 'undefined') lucide.createIcons();
 }
 
 function restart() {
-  currentGender = null; currentQuestion = 0; totalScore = 0; userAnswers = [];
+  currentGender = null; mode = 'normal';
+  qList = []; qPtr = 0; totalScore = 0; scoredCount = 0; userBaseAnswers = [];
   goTo('screen-welcome');
-  tryPlay();
 }
 
 document.addEventListener('pointerdown', e => {
@@ -772,6 +1007,5 @@ document.addEventListener('pointerdown', e => {
 boot();
 if (typeof lucide !== 'undefined') lucide.createIcons();
 </script>
-
 </body>
 </html>
