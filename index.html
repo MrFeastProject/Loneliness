@@ -41,13 +41,11 @@
   function db() { if (!dbP) dbP = openDB(); return dbP; }
 
   async function loadAsset(item) {
-    // 1) Сначала из кэша IndexedDB — мгновенно, без сети
     try {
       var d = await db();
       var cached = await dbGet(d, item.key);
       if (cached && typeof cached === 'string' && cached.length > 100) { injectText(cached); return; }
     } catch (e) {}
-    // 2) Иначе из сети + сохраняем в кэш на следующий раз
     try {
       var resp = await fetch(item.url);
       if (!resp.ok) throw new Error('bad');
@@ -56,7 +54,6 @@
       try { var d2 = await db(); await dbSet(d2, item.key, text); } catch (e) {}
       return;
     } catch (e) {}
-    // 3) Фолбэк: обычный script src
     await injectSrc(item.url);
   }
 
@@ -86,12 +83,44 @@
   html, body { height: 100%; }
   body { overflow: hidden; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Inter", sans-serif; background: var(--bg); color: var(--fg); -webkit-font-smoothing: antialiased; -webkit-tap-highlight-color: transparent; }
 
-  canvas#rainBack { position: fixed; inset: 0; z-index: 1; pointer-events: none; }
-  canvas#rainFront { position: fixed; inset: 0; z-index: 6; pointer-events: none; }
-  .fog { position: fixed; inset: 0; background: radial-gradient(circle at 50% 50%, transparent 40%, rgba(0,0,0,0.45) 100%); z-index: 2; pointer-events: none; }
+  /* Canvas дождя — отдельные GPU-слои с приоритетом композитинга */
+  canvas#rainBack, canvas#rainFront {
+    position: fixed; inset: 0; pointer-events: none;
+    will-change: transform, contents;
+    transform: translateZ(0);
+    -webkit-backface-visibility: hidden;
+    backface-visibility: hidden;
+    contain: strict;
+  }
+  canvas#rainBack { z-index: 1; }
+  canvas#rainFront { z-index: 6; }
 
-  .app { position: relative; z-index: 3; height: 100dvh; overflow-y: auto; overflow-x: hidden; display: flex; padding: clamp(12px,3vw,28px); padding-bottom: max(env(safe-area-inset-bottom),16px); -webkit-overflow-scrolling: touch; }
-  .screen { display: none; margin: auto; width: 100%; max-width: 640px; animation: fadeIn 0.7s ease; }
+  /* Туман — тоже изолированный слой */
+  .fog {
+    position: fixed; inset: 0;
+    background: radial-gradient(circle at 50% 50%, transparent 40%, rgba(0,0,0,0.45) 100%);
+    z-index: 2; pointer-events: none;
+    will-change: opacity;
+    transform: translateZ(0);
+    contain: layout paint;
+  }
+
+  /* Прокручиваемый контейнер — на GPU, чтобы скролл не дёргал остальной DOM */
+  .app {
+    position: relative; z-index: 3; height: 100dvh;
+    overflow-y: auto; overflow-x: hidden;
+    display: flex;
+    padding: clamp(12px,3vw,28px);
+    padding-bottom: max(env(safe-area-inset-bottom),16px);
+    -webkit-overflow-scrolling: touch;
+    -webkit-transform: translateZ(0);
+    transform: translateZ(0);
+  }
+  .screen {
+    display: none; margin: auto; width: 100%; max-width: 640px;
+    animation: fadeIn 0.7s ease;
+    will-change: opacity, transform;
+  }
   .screen.active { display: flex; flex-direction: column; align-items: center; justify-content: center; }
   @keyframes fadeIn { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
 
@@ -110,7 +139,32 @@
 
   .generating-text { font-size: clamp(1.05rem,3.2vw,1.35rem); color: #ddd; text-align: center; margin-top: 22px; font-weight: 300; line-height: 1.6; }
 
-  .card { background: var(--glass); backdrop-filter: blur(20px) saturate(120%); -webkit-backdrop-filter: blur(20px) saturate(120%); border: 1px solid var(--glass-border); border-radius: clamp(14px,3vw,20px); padding: clamp(22px,5vw,40px) clamp(18px,4.5vw,36px); box-shadow: 0 30px 80px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.05); width: 100%; }
+  /* Карточка: blur вынесен на отдельный ::before-слой (GPU), контент сверху не триггерит перерасчёт.
+     Сам фон сделан чуть плотнее, чтобы размытие не было критичным. */
+  .card {
+    position: relative;
+    isolation: isolate;
+    background: rgba(18, 18, 18, 0.72);
+    border: 1px solid var(--glass-border);
+    border-radius: clamp(14px,3vw,20px);
+    padding: clamp(22px,5vw,40px) clamp(18px,4.5vw,36px);
+    box-shadow: 0 30px 80px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.05);
+    width: 100%;
+    will-change: transform;
+    transform: translateZ(0);
+    -webkit-backface-visibility: hidden;
+    backface-visibility: hidden;
+  }
+  .card::before {
+    content: "";
+    position: absolute; inset: 0;
+    z-index: -1;
+    border-radius: inherit;
+    background: rgba(20,20,20,0.35);
+    backdrop-filter: blur(14px) saturate(120%);
+    -webkit-backdrop-filter: blur(14px) saturate(120%);
+  }
+
   h1 { font-size: clamp(1.9rem,7vw,3rem); font-weight: 200; letter-spacing: 0.3em; text-align: center; margin-bottom: 10px; background: linear-gradient(180deg,#fff 0%,#999 100%); -webkit-background-clip: text; background-clip: text; color: transparent; }
   .subtitle { text-align: center; color: var(--muted); font-size: clamp(0.7rem,2.4vw,0.95rem); letter-spacing: 0.1em; margin-bottom: 26px; font-weight: 300; }
   .quote { text-align: center; font-style: italic; color: #b0b0b0; padding: 18px 8px; border-top: 1px solid rgba(255,255,255,0.06); border-bottom: 1px solid rgba(255,255,255,0.06); margin-bottom: 26px; line-height: 1.6; font-size: clamp(0.85rem,2.6vw,1rem); }
@@ -123,7 +177,7 @@
   .disc-title { text-align: center; font-size: 1.15rem; letter-spacing: 0.25em; text-transform: uppercase; font-weight: 300; margin-bottom: 16px; }
   .disc-text { color: #aaa; line-height: 1.7; font-size: 0.9rem; text-align: center; margin-bottom: 24px; }
 
-  .btn, .option { position: relative; overflow: hidden; }
+  .btn, .option { position: relative; overflow: hidden; will-change: transform; }
   .btn { display: inline-flex; align-items: center; justify-content: center; gap: 10px; width: 100%; padding: 16px 24px; background: linear-gradient(180deg, rgba(255,255,255,0.1), rgba(255,255,255,0.02)); color: var(--fg); border: 1px solid rgba(255,255,255,0.15); border-radius: 14px; font-size: 1rem; letter-spacing: 0.05em; cursor: pointer; transition: all 0.25s ease; font-family: inherit; user-select: none; touch-action: manipulation; }
   .btn:hover { background: linear-gradient(180deg, rgba(255,255,255,0.18), rgba(255,255,255,0.05)); border-color: rgba(255,255,255,0.35); transform: translateY(-1px); box-shadow: 0 6px 24px rgba(0,0,0,0.5), 0 0 18px rgba(255,255,255,0.06); }
   .btn:active { transform: translateY(0) scale(0.99); }
@@ -192,7 +246,7 @@
 
   <div class="screen" id="screen-welcome">
     <div class="card">
-      <h1>LONELINESS (V2) </h1>
+      <h1>LONELINESS</h1>
       <div class="subtitle">ПСИХОЛОГИЧЕСКИЙ ТЕСТ</div>
       <div class="quote">«Одиночество — это не отсутствие людей рядом,<br>а отсутствие того, кто понимает»</div>
       <p style="color:#aaa; line-height:1.7; text-align:center; margin-bottom:24px; font-weight:300;">
@@ -277,7 +331,8 @@
       <div class="result-desc" id="resultDesc">—</div>
       <div class="advice"><div class="advice-title"><i data-lucide="heart-handshake"></i> Персональные рекомендации</div><div id="adviceText"></div></div>
       <div class="advice"><div class="advice-title"><i data-lucide="heart"></i> Душевная поддержка</div><div id="supportText"></div></div>
-      <button class="btn" style="margin-top:24px;" onclick="restart()"><i data-lucide="rotate-ccw"></i> Пройти ещё раз</button>
+      <button class="btn" style="margin-top:24px;" onclick="retry()"><i data-lucide="rotate-ccw"></i> Пройти ещё раз</button>
+      <button class="btn" style="margin-top:12px;" onclick="backToMenu()"><i data-lucide="home"></i> Назад в меню</button>
     </div>
   </div>
 
@@ -392,6 +447,12 @@ const sceneCv = document.createElement('canvas');
 const bctx = backCv.getContext('2d');
 const fctx = frontCv.getContext('2d');
 const tctx = trailCv.getContext('2d');
+
+/* Аппаратное ускорение canvas: desynchronized выводит canvas в обход основного
+   compositor-потока (меньше лагов при частой перерисовке дождя). Где не поддерживается — игнорируется. */
+try { bctx.imageSmoothingEnabled = true; } catch(e){}
+[fctx, bctx, tctx].forEach(c => { try { c.desynchronized = true; } catch(e){} });
+
 let W = 0, H = 0, dpr = 1, intensity = 1, flash = 0, frame = 0;
 
 let lights = [];
@@ -648,33 +709,33 @@ function animate() {
 }
 animate();
 
-/* ================= ТЕСТ ================= */
+/* ================= ТЕСТ (формулировки с учётом пола) ================= */
 const baseQuestions = [
-  { q: "Есть ли у вас близкий человек, которому вы можете рассказать о своих переживаниях?", type:'scale', reverse:true },
-  { q: "Чувствуете ли вы, что вам не с кем поговорить?", type:'scale', reverse:false },
-  { q: "Есть ли рядом люди, с которыми вам тепло и спокойно?", type:'scale', reverse:true },
-  { q: "Чувствуете ли вы, что никто вас по-настоящему не понимает?", type:'scale', reverse:false },
-  { q: "Бывает ли у вас чувство, что вы никому не нужны?", type:'scale', reverse:false },
-  { q: "Есть ли человек, к которому можно обратиться за помощью, когда тяжело?", type:'scale', reverse:true },
-  { q: "Часто ли общение с людьми не приносит вам радости?", type:'scale', reverse:false },
-  { q: "Хватает ли вам близкого человека рядом?", type:'scale', reverse:true },
-  { q: "Есть ли люди, которым интересны те же вещи, что и вам?", type:'scale', reverse:true },
-  { q: "Чувствуете ли вы себя далеко от других людей?", type:'scale', reverse:false },
-  { q: "Бывает ли вам одиноко даже среди людей?", type:'scale', reverse:false },
-  { q: "Легко ли вам знакомиться и общаться с новыми людьми?", type:'scale', reverse:true },
-  { q: "Чувствуете ли вы, что в ваших отношениях с людьми нет настоящей близости?", type:'scale', reverse:false },
-  { q: "Чувствуете ли вы, что люди вас ценят и уважают?", type:'scale', reverse:true },
-  { q: "Хватает ли вам простого тёплого общения?", type:'scale', reverse:true },
-  { q: "Бывает ли, что вы остаётесь один, хотя хотите быть с людьми?", type:'scale', reverse:false },
-  { q: "Есть ли человек, с которым можно поделиться всем, что на душе?", type:'scale', reverse:true },
-  { q: "Чувствуете ли вы себя чужим среди людей?", type:'scale', reverse:false },
-  { q: "Кажется ли вам, что до вас никому нет дела?", type:'scale', reverse:false },
-  { q: "Есть ли человек, с которым вы чувствуете себя по-настоящему близко?", type:'scale', reverse:true },
-  { q: "Чувствуете ли вы одиночество внутри себя?", type:'scale', reverse:false },
-  { q: "Чувствуете ли вы себя лишним в компании?", type:'scale', reverse:false },
-  { q: "Чувствуете ли вы себя частью семьи, компании друзей или коллектива?", type:'scale', reverse:true },
-  { q: "Избегаете ли вы общения из страха, что вас не поймут?", type:'scale', reverse:false },
-  { q: "Тяжело ли вам оставаться наедине с собой?", type:'scale', reverse:false }
+  { q: () => "Есть ли у вас близкий человек, которому вы можете рассказать о своих переживаниях?", type:'scale', reverse:true },
+  { q: () => "Чувствуете ли вы, что вам не с кем поговорить?", type:'scale', reverse:false },
+  { q: () => "Есть ли рядом люди, с которыми вам тепло и спокойно?", type:'scale', reverse:true },
+  { q: () => "Чувствуете ли вы, что никто вас по-настоящему не понимает?", type:'scale', reverse:false },
+  { q: () => "Бывает ли у вас чувство, что вы никому не нужны?", type:'scale', reverse:false },
+  { q: () => "Есть ли человек, к которому можно обратиться за помощью, когда тяжело?", type:'scale', reverse:true },
+  { q: () => "Часто ли общение с людьми не приносит вам радости?", type:'scale', reverse:false },
+  { q: () => "Хватает ли вам близкого человека рядом?", type:'scale', reverse:true },
+  { q: () => "Есть ли люди, которым интересны те же вещи, что и вам?", type:'scale', reverse:true },
+  { q: () => "Чувствуете ли вы себя далеко от других людей?", type:'scale', reverse:false },
+  { q: () => "Бывает ли вам одиноко даже среди людей?", type:'scale', reverse:false },
+  { q: () => "Легко ли вам знакомиться и общаться с новыми людьми?", type:'scale', reverse:true },
+  { q: () => "Чувствуете ли вы, что в ваших отношениях с людьми нет настоящей близости?", type:'scale', reverse:false },
+  { q: () => "Чувствуете ли вы, что люди вас ценят и уважают?", type:'scale', reverse:true },
+  { q: () => "Хватает ли вам простого тёплого общения?", type:'scale', reverse:true },
+  { q: g => "Бывает ли, что вы остаётесь " + (g === 'female' ? 'одна' : 'один') + ", хотя хотите быть с людьми?", type:'scale', reverse:false },
+  { q: () => "Есть ли человек, с которым можно поделиться всем, что на душе?", type:'scale', reverse:true },
+  { q: () => "Чувствуете ли вы себя чужим среди людей?", type:'scale', reverse:false },
+  { q: () => "Кажется ли вам, что до вас никому нет дела?", type:'scale', reverse:false },
+  { q: () => "Есть ли человек, с которым вы чувствуете себя по-настоящему близко?", type:'scale', reverse:true },
+  { q: () => "Чувствуете ли вы одиночество внутри себя?", type:'scale', reverse:false },
+  { q: () => "Чувствуете ли вы себя лишним в компании?", type:'scale', reverse:false },
+  { q: () => "Чувствуете ли вы себя частью семьи, компании друзей или коллектива?", type:'scale', reverse:true },
+  { q: () => "Избегаете ли вы общения из страха, что вас не поймут?", type:'scale', reverse:false },
+  { q: () => "Тяжело ли вам оставаться наедине с собой?", type:'scale', reverse:false }
 ];
 
 const ctx = { flags: { partner:false, like:false, confessed:false }, texts: {} };
@@ -692,11 +753,19 @@ const deepQuestions = [
     type:'custom', options:[{text:"Да",score:2},{text:"Нет",score:3}],
     onAnswer: v => { ctx.flags.confessed = (v === 2); } },
   { id:'response', when: c => c.flags.confessed, q: g => g === 'female' ? "Что он ответил в ответ?" : "Что она ответила в ответ?",
-    type:'text', placeholder:"Напиши своими словами...", key:'confessResponse' },
-  { id:'why_not', when: c => c.flags.like && !c.flags.confessed, q: () => "Почему пока не признался(ась)?",
-    type:'custom', options:[{text:"Страх отказа",score:4},{text:"Не уверен(а) в своих чувствах",score:2},{text:"Жду подходящего момента",score:2},{text:"Это невозможно",score:5}], axis:'avoidance' },
+    type:'text', placeholder:"Напиши своими словами...", key:'confessResponse',
+    skip:{ text:"Без ответа", value:"" } },
+  { id:'why_not', when: c => c.flags.like && !c.flags.confessed,
+    q: g => g === 'female' ? "Почему пока не призналась?" : "Почему пока не признался?",
+    type:'custom', axis:'avoidance',
+    options: g => [
+      {text:"Страх отказа",score:4},
+      {text: g === 'female' ? "Не уверена в своих чувствах" : "Не уверен в своих чувствах",score:2},
+      {text:"Жду подходящего момента",score:2},
+      {text:"Это невозможно",score:5}
+    ] },
   { id:'partner_support', when: c => c.flags.partner, q: () => "Чувствуешь ли ты поддержку и понимание от своей половинки?", type:'scale', reverse:true, axis:'intimate' },
-  { id:'partner_lonely', when: c => c.flags.partner, q: () => "Бывает ли тебе одиноко даже рядом с ней/ним?", type:'scale', reverse:false, axis:'intimate' },
+  { id:'partner_lonely', when: c => c.flags.partner, q: g => "Бывает ли тебе одиноко даже рядом с " + (g === 'female' ? 'ним' : 'ней') + "?", type:'scale', reverse:false, axis:'intimate' },
   { id:'friends', q: () => "Сколько у тебя по-настоящему близких друзей?", type:'custom', axis:'support',
     options:[{text:"Ни одного",score:5},{text:"Один",score:4},{text:"2–3",score:2},{text:"4 и больше",score:1}] },
   { id:'meet', q: () => "Как часто ты встречаешься с друзьями вживую?", type:'custom', axis:'belonging',
@@ -704,7 +773,7 @@ const deepQuestions = [
   { id:'family', q: () => "Как часто ты общаешься с семьёй или родными?", type:'custom', axis:'belonging',
     options:[{text:"Каждый день",score:1},{text:"Пару раз в неделю",score:2},{text:"Раз в месяц",score:3},{text:"Реже",score:4},{text:"Не общаюсь",score:5}] },
   { id:'first', q: () => "Друзья пишут или звонят тебе первыми?", type:'scale', reverse:true, axis:'support' },
-  { id:'evening', q: () => "Что ты обычно чувствуешь вечером, когда остаёшься один(на)?", type:'custom', axis:'inner',
+  { id:'evening', q: g => "Что ты обычно чувствуешь вечером, когда остаёшься " + (g === 'female' ? 'одна' : 'один') + "?", type:'custom', axis:'inner',
     options:[{text:"Спокойствие",score:1},{text:"Лёгкую грусть",score:3},{text:"Тоску",score:4},{text:"Тревогу",score:5}] },
   { id:'social', q: () => "Сколько часов в день ты проводишь в соцсетях?", type:'custom', axis:'depth',
     options:[{text:"Меньше часа",score:1},{text:"1–2 часа",score:2},{text:"3–4 часа",score:3},{text:"Больше 4 часов",score:4}] },
@@ -715,8 +784,10 @@ const deepQuestions = [
   { id:'help_ask', q: () => "Легко ли тебе просить о помощи?", type:'scale', reverse:true, axis:'support' },
   { id:'weekend', q: () => "Как ты обычно проводишь выходные?", type:'custom', axis:'voluntary',
     options:[{text:"С людьми",score:1},{text:"По-разному",score:2},{text:"В одиночестве — это мой выбор",score:2},{text:"В одиночестве — поневоле",score:4}] },
-  { id:'worry', q: () => "Напиши, что тебя больше всего беспокоит прямо сейчас", type:'text', placeholder:"Поделись — это останется только у тебя...", key:'worry' },
-  { id:'alone_mean', q: () => "Что для тебя означает слово «одиночество»?", type:'text', placeholder:"Пара слов своими словами...", key:'aloneMean' }
+  { id:'worry', q: () => "Напиши, что тебя больше всего беспокоит прямо сейчас", type:'text', placeholder:"Поделись — это останется только у тебя...", key:'worry',
+    skip:{ text:"Ничего не беспокоит", value:"" } },
+  { id:'alone_mean', q: () => "Что для тебя означает слово «одиночество»?", type:'text', placeholder:"Пара слов своими словами...", key:'aloneMean',
+    skip:{ text:"Сложно объяснить", value:"" } }
 ];
 
 const scaleOptions = [
@@ -797,8 +868,18 @@ function renderQuestion() {
     btn.textContent = 'Дальше';
     btn.onclick = () => { ctx.texts[q.key] = ta.value.trim(); advance(); };
     list.appendChild(btn);
+    if (q.skip) {
+      const btnSkip = document.createElement('button');
+      btnSkip.className = 'btn';
+      btnSkip.style.marginTop = '12px';
+      btnSkip.textContent = q.skip.text;
+      btnSkip.onclick = () => { ctx.texts[q.key] = q.skip.value || ''; advance(); };
+      list.appendChild(btnSkip);
+    }
   } else {
-    const opts = q.type === 'custom' ? q.options : scaleOptions;
+    let opts;
+    if (q.type === 'custom') opts = typeof q.options === 'function' ? q.options(currentGender) : q.options;
+    else opts = scaleOptions;
     opts.forEach(opt => {
       const btn = document.createElement('button');
       btn.className = 'option'; btn.textContent = opt.text;
@@ -982,9 +1063,22 @@ function showResult() {
   if (typeof lucide !== 'undefined') lucide.createIcons();
 }
 
-function restart() {
+function resetState() {
   currentGender = null; mode = 'normal';
   qList = []; qPtr = 0; totalScore = 0; scoredCount = 0; userBaseAnswers = [];
+  ctx.flags = { partner:false, like:false, confessed:false };
+  ctx.texts = {};
+  for (const k in extraAxis) delete extraAxis[k];
+}
+
+function retry() {
+  resetState();
+  startMusic();
+  goTo('screen-gender');
+}
+function backToMenu() {
+  resetState();
+  startMusic();
   goTo('screen-welcome');
 }
 
@@ -1008,4 +1102,4 @@ boot();
 if (typeof lucide !== 'undefined') lucide.createIcons();
 </script>
 </body>
-</html>
+  </html>
